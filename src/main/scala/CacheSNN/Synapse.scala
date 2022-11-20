@@ -1,0 +1,5 @@
+package CacheSNN
+
+class Synapse {
+
+}
