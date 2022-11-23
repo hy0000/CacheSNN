@@ -4,8 +4,8 @@ import spinal.core._
 import spinal.lib._
 import spinal.lib.bus.simple.PipelinedMemoryBus
 
-case class NocConfig(dataWidth:Int = 64,
-                     regAddrWidth:Int = 5)
+case class NocConfig(dataWidth: Int,
+                     regAddrWidth: Int)
 
 case class NocInterface(c:NocConfig) extends Bundle with IMasterSlave {
   import c._
