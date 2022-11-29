@@ -2,6 +2,7 @@ package Synapse
 
 import CacheSNN.CacheSNN
 import RingNoC.NocInterfaceLocal
+import Synapse.SynapseCore.AddrMapping
 import spinal.core._
 import spinal.core.fiber.Handle
 import spinal.lib._
@@ -10,6 +11,7 @@ import spinal.lib.bus.misc.SizeMapping
 
 object SynapseCore {
   val busDataWidth = 64
+  val busByteCount = busDataWidth / 8
 
   object AddrMapping {
     val cache      = SizeMapping(0, CacheConfig.size)
@@ -42,13 +44,15 @@ object SynapseCore {
     alignment = BmbParameter.BurstAlignement.LENGTH,
     accessLatencyMin = 2
   )
+
+  val postNeuronAddrWidth = AddrMapping.current.size / busByteCount
 }
 
 object CacheConfig {
   val size = 128 KiB
   val lines = 128
   val ways = 8
-  val addrWidth = log2Up(size / (SynapseCore.busDataWidth / 8))
+  val addrWidth = log2Up(size / SynapseCore.busByteCount)
 }
 
 case class MemWriteCmd(dataWidth:Int, addrWidth:Int) extends Bundle {
@@ -65,19 +69,13 @@ case class MemReadWrite(dataWidth:Int, addrWidth:Int) extends Bundle with IMaste
   }
 }
 
-class PreSynapseEvent extends Bundle {
-  val preSpike = Bits(16 bits)
-  val neuronId = UInt(CacheSNN.neuronAddrWidth bits)
+class SpikeEvent extends Bundle {
+  val cacheAddr = UInt(CacheConfig.addrWidth bits)
+  val postNidOffset = UInt(SynapseCore.postNeuronAddrWidth bits)
 }
 
-case class SynapseEventBus() extends Bundle with IMasterSlave {
-  val event = Stream(new PreSynapseEvent)
-  val done = Event
-
-  override def asMaster(): Unit = {
-    master(event)
-    slave(done)
-  }
+class SynapseEvent extends SpikeEvent {
+  val preSpike = Bits(16 bits)
 }
 
 class SynapseCore extends Component {
@@ -145,8 +143,8 @@ class SynapseCore extends Component {
   bmbSlave("postSpike").bus.load(postSpikeRam.io.bmb)
 
   synapseCtrl.io.noc <> io.noc
-  synapseCtrl.io.synapseEventBus <> synapse.io.eventBus
-  synapse.io.synapseDataBus <> cache.io.synapseDataBus
+  synapseCtrl.io.synapseEvent <> synapse.io.synapseEvent
+  synapse.io.synapseData <> cache.io.synapseData
   synapse.io.current <> currentRam.io.mem
   postSpikeRam.io.mem.read <> synapse.io.postSpike
   postSpikeRam.io.mem.write.setIdle()

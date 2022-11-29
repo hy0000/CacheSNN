@@ -115,8 +115,8 @@ class CacheTest extends AnyFunSuite {
     complied.doSim { dut =>
       SimTimeout(100000)
       dut.clockDomain.forkStimulus(2)
-      dut.io.synapseDataBus.read.cmd.valid #= false
-      dut.io.synapseDataBus.write.valid #= false
+      dut.io.synapseData.read.cmd.valid #= false
+      dut.io.synapseData.write.valid #= false
       BmbRamTest.bmbTest(dut.io.bmb, dut.clockDomain, 256)
     }
   }
@@ -126,7 +126,7 @@ class CacheTest extends AnyFunSuite {
       SimTimeout(100000)
       dut.clockDomain.forkStimulus(2)
       dut.io.bmb.cmd.valid #= false
-      BmbRamTest.memRwTest(dut.io.synapseDataBus, dut.clockDomain, dut.readDelay, 256)
+      BmbRamTest.memRwTest(dut.io.synapseData, dut.clockDomain, dut.readDelay, 256)
     }
   }
 
@@ -137,10 +137,10 @@ class CacheTest extends AnyFunSuite {
         val writeAddr = 0x020
         dut.clockDomain.forkStimulus(2)
         dut.io.bmb.cmd.valid #= false
-        dut.io.synapseDataBus.read.cmd.valid #= true
-        dut.io.synapseDataBus.read.cmd.payload #= readAddr
-        dut.io.synapseDataBus.write.valid #= true
-        dut.io.synapseDataBus.write.address #= writeAddr
+        dut.io.synapseData.read.cmd.valid #= true
+        dut.io.synapseData.read.cmd.payload #= readAddr
+        dut.io.synapseData.write.valid #= true
+        dut.io.synapseData.write.address #= writeAddr
         dut.clockDomain.waitSampling(2)
       }
     }

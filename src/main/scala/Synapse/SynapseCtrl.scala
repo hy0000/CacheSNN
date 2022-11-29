@@ -11,7 +11,8 @@ class SynapseCtrl extends Component {
     val noc = slave(NocInterfaceLocal(CacheSNN.nocBusWidth))
     val cacheBus = master(Bmb(SynapseCore.bmbMasterParameter))
     val bufferBus = master(Bmb(SynapseCore.bmbMasterParameter))
-    val synapseEventBus = master(SynapseEventBus())
+    val synapseEvent = master(Stream(new SynapseEvent))
+    val synapseEventDone = slave(Event)
   }
   stub()
 }

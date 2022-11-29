@@ -6,12 +6,13 @@ import spinal.lib.bus.bmb.{Bmb, BmbParameter}
 
 class Synapse extends Component {
   import SynapseCore._
-  val spikeBufferAddrWidth = log2Up(AddrMapping.postSpike.size / (SynapseCore.busDataWidth / 8))
-  val currentBufferAddrWidth = log2Up(AddrMapping.current.size / (SynapseCore.busDataWidth / 8))
+  val spikeBufferAddrWidth = log2Up(AddrMapping.postSpike.size / busByteCount)
+  val currentBufferAddrWidth = log2Up(AddrMapping.current.size / busByteCount)
 
   val io = new Bundle {
-    val eventBus = slave(SynapseEventBus())
-    val synapseDataBus = master(MemReadWrite(64, CacheConfig.addrWidth))
+    val synapseEvent = slave(Stream(new SynapseEvent))
+    val synapseData = master(MemReadWrite(64, CacheConfig.addrWidth))
+    val synapseEventDone = master(Event)
     val postSpike = master(MemReadPort(Bits(64 bits), spikeBufferAddrWidth))
     val current = master(MemReadWrite(64, currentBufferAddrWidth))
   }

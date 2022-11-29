@@ -18,8 +18,6 @@ object CacheSNN {
     idWidth = 2
   )
   val apbConfig = Apb3Config(32, 64)
-
-  val neuronAddrWidth = 16
 }
 
 class CacheSNN extends Component {
