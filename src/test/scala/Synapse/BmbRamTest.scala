@@ -5,8 +5,53 @@ import org.scalatest.funsuite.AnyFunSuite
 import spinal.core._
 import spinal.core.sim._
 import spinal.lib.bus.bmb.Bmb.Cmd.Opcode
-import spinal.lib.bus.bmb.BmbParameter
+import spinal.lib.bus.bmb.{Bmb, BmbParameter}
 import spinal.lib.sim.StreamReadyRandomizer
+
+import scala.util.Random
+
+object BmbRamTest {
+  def bmbTest(bmb:Bmb, clockDomain: ClockDomain, n:Int): Unit ={
+
+    def clearValid(): Unit ={
+      if(Random.nextInt(10)<4){
+        bmb.cmd.valid #= false
+        clockDomain.waitSampling(Random.nextInt(4))
+      }
+    }
+
+    bmb.cmd.valid #= false
+    StreamReadyRandomizer(bmb.rsp, clockDomain)
+    fork {
+      bmb.cmd.opcode #= Opcode.WRITE
+      for (i <- 0 until n) {
+        bmb.cmd.valid #= true
+        bmb.cmd.context #= i
+        bmb.cmd.address #= i << bmb.p.access.wordRangeLength
+        bmb.cmd.data #= i
+        clockDomain.waitSamplingWhere(bmb.cmd.ready.toBoolean)
+        clearValid()
+      }
+      bmb.cmd.opcode #= Opcode.READ
+      for (i <- 0 until n) {
+        bmb.cmd.context #= i
+        bmb.cmd.valid #= true
+        bmb.cmd.address #= i << bmb.p.access.wordRangeLength
+        clockDomain.waitSamplingWhere(bmb.cmd.ready.toBoolean)
+        clearValid()
+      }
+    }
+    for (i <- 0 until n) {
+      clockDomain.waitSamplingWhere(bmb.rsp.valid.toBoolean && bmb.rsp.ready.toBoolean)
+      assert(bmb.rsp.context.toInt == i)
+    }
+    for (i <- 0 until 64) {
+      clockDomain.waitSamplingWhere(bmb.rsp.valid.toBoolean && bmb.rsp.ready.toBoolean)
+      assert(bmb.rsp.context.toInt == i)
+      assert(bmb.rsp.data.toBigInt == i)
+    }
+  }
+}
 
 class BmbRamTest extends AnyFunSuite {
   val size = 8 KiB
@@ -19,34 +64,7 @@ class BmbRamTest extends AnyFunSuite {
       dut.clockDomain.forkStimulus(2)
       dut.io.mem.read.cmd.valid #= false
       dut.io.mem.write.valid #= false
-      dut.io.bmb.cmd.valid #= false
-      StreamReadyRandomizer(dut.io.bmb.rsp, dut.clockDomain)
-      fork{
-        dut.io.bmb.cmd.opcode #= Opcode.WRITE
-        for (i <- 0 until 64) {
-          dut.io.bmb.cmd.valid #= true
-          dut.io.bmb.cmd.context #= i
-          dut.io.bmb.cmd.address #= i << p.access.wordRangeLength
-          dut.io.bmb.cmd.data #= i
-          dut.clockDomain.waitSamplingWhere(dut.io.bmb.cmd.ready.toBoolean)
-        }
-        dut.io.bmb.cmd.opcode #= Opcode.READ
-        for (i <- 0 until 64) {
-          dut.io.bmb.cmd.context #= i
-          dut.io.bmb.cmd.valid #= true
-          dut.io.bmb.cmd.address #= i << p.access.wordRangeLength
-          dut.clockDomain.waitSamplingWhere(dut.io.bmb.cmd.ready.toBoolean)
-        }
-      }
-      for(i <- 0 until 64) {
-        dut.clockDomain.waitSamplingWhere(dut.io.bmb.rsp.valid.toBoolean && dut.io.bmb.rsp.ready.toBoolean)
-        assert(dut.io.bmb.rsp.context.toInt==i)
-      }
-      for (i <- 0 until 64) {
-        dut.clockDomain.waitSamplingWhere(dut.io.bmb.rsp.valid.toBoolean && dut.io.bmb.rsp.ready.toBoolean)
-        assert(dut.io.bmb.rsp.context.toInt == i)
-        assert(dut.io.bmb.rsp.data.toBigInt == i)
-      }
+      BmbRamTest.bmbTest(dut.io.bmb, dut.clockDomain, 128)
     }
   }
 
@@ -82,6 +100,21 @@ class BmbRamTest extends AnyFunSuite {
         assert(dut.io.mem.read.rsp.toBigInt == i)
         dut.clockDomain.waitSampling()
       }
+    }
+  }
+}
+
+class CacheTest extends AnyFunSuite {
+  val p = BmbParameter(log2Up(CacheConfig.size / 8), 64, 0, 8, 3)
+  val complied = simConfig.compile(new Cache(p))
+
+  test("bmb test") {
+    complied.doSim { dut =>
+      SimTimeout(100000)
+      dut.clockDomain.forkStimulus(2)
+      dut.io.synapseDataBus.read.cmd.valid #= false
+      dut.io.synapseDataBus.write.valid #= false
+      BmbRamTest.bmbTest(dut.io.bmb, dut.clockDomain, 256)
     }
   }
 }

@@ -49,6 +49,7 @@ class BmbRam(p:BmbParameter, size:BigInt) extends Component {
 }
 
 class Cache(p: BmbParameter) extends Component {
+  def readDelay = 2
 
   val io = new Bundle {
     val bmb = slave(Bmb(p))
@@ -59,7 +60,35 @@ class Cache(p: BmbParameter) extends Component {
     Mem(Bits(p.access.dataWidth bits), CacheConfig.size / 2 / p.access.byteCount)
   )
 
-  val ramSel = io.bmb.cmd.address(log2Up(p.access.byteCount)-1).asUInt
-  val bmbCmdDe = StreamDemux(io.bmb.cmd, ramSel, 2)
-  
+  val bmbLogic = new Area{
+    val bmbAddress = io.bmb.cmd.address >> p.access.wordRangeLength
+    val bmbNotStall = !io.bmb.rsp.isStall
+    io.bmb.cmd.ready := bmbNotStall
+
+    val ramSel = bmbAddress.lsb.asUInt
+    val ramSelDelay = Delay(ramSel, 2, bmbNotStall)
+
+    val data = Vec(rams.zipWithIndex.map{case (ram, i) =>
+      val ret = ram.readWriteSync(
+        address = (bmbAddress>>1).resized,
+        data = io.bmb.cmd.data,
+        enable = io.bmb.cmd.fire && ramSel===i,
+        write = io.bmb.cmd.isWrite,
+      )
+      RegNext(ret)
+    })(ramSelDelay)
+
+    val selHold = RegInit(False) setWhen io.bmb.rsp.isStall clearWhen io.bmb.rsp.ready
+    val dataHold = RegNextWhen(data, !selHold && !io.bmb.rsp.ready)
+    io.bmb.rsp.data := Mux(selHold, dataHold, data)
+    io.bmb.rsp.valid := Delay(io.bmb.cmd.valid, 2, bmbNotStall, False)
+    io.bmb.rsp.source := Delay(io.bmb.cmd.source, 2, bmbNotStall)
+    io.bmb.rsp.context := Delay(io.bmb.cmd.context, 2, bmbNotStall)
+    io.bmb.rsp.setSuccess()
+    io.bmb.rsp.last := True
+  }
+
+  val rwLogic = new Area {
+    io.synapseDataBus.read.rsp := 0
+  }
 }
