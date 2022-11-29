@@ -2,11 +2,11 @@ package Synapse
 
 import CacheSNN.CacheSnnTest.simConfig
 import org.scalatest.funsuite.AnyFunSuite
-import spinal.core._
+import spinal.lib.sim._
 import spinal.core.sim._
+import spinal.core._
 import spinal.lib.bus.bmb.Bmb.Cmd.Opcode
 import spinal.lib.bus.bmb.{Bmb, BmbParameter}
-import spinal.lib.sim.StreamReadyRandomizer
 
 import scala.util.Random
 
@@ -51,6 +51,35 @@ object BmbRamTest {
       assert(bmb.rsp.data.toBigInt == i)
     }
   }
+
+  def memRwTest(mem:MemReadWrite, clockDomain: ClockDomain, readDelay:Int, n:Int): Unit ={
+    mem.write.valid #= false
+    mem.read.cmd.valid #= false
+    fork {
+      mem.write.valid #= true
+      for (i <- 0 until n) {
+        mem.write.address #= i
+        mem.write.data #= i
+        clockDomain.waitSampling()
+      }
+      mem.write.valid #= false
+    }
+    fork {
+      clockDomain.waitSampling()
+      mem.read.cmd.valid #= true
+      for (i <- 0 until n) {
+        mem.read.cmd.payload #= i
+        clockDomain.waitSampling()
+      }
+      mem.read.cmd.valid #= false
+    }
+
+    clockDomain.waitSampling(readDelay + 2)
+    for (i <- 0 until n) {
+      assert(mem.read.rsp.toBigInt == i)
+      clockDomain.waitSampling()
+    }
+  }
 }
 
 class BmbRamTest extends AnyFunSuite {
@@ -72,34 +101,8 @@ class BmbRamTest extends AnyFunSuite {
     complied.doSim{dut =>
       SimTimeout(100000)
       dut.clockDomain.forkStimulus(2)
-      dut.io.mem.read.cmd.valid #= false
-      dut.io.mem.write.valid #= false
       dut.io.bmb.cmd.valid #= false
-      StreamReadyRandomizer(dut.io.bmb.rsp, dut.clockDomain)
-      fork {
-        dut.io.mem.write.valid #= true
-        for (i <- 0 until 64) {
-          dut.io.mem.write.address #= i
-          dut.io.mem.write.data #= i
-          dut.clockDomain.waitSampling()
-        }
-        dut.io.mem.write.valid #= false
-      }
-      fork {
-        dut.clockDomain.waitSampling()
-        dut.io.mem.read.cmd.valid #= true
-        for (i <- 0 until 64) {
-          dut.io.mem.read.cmd.payload #= i
-          dut.clockDomain.waitSampling()
-        }
-        dut.io.mem.read.cmd.valid #= false
-      }
-
-      dut.clockDomain.waitSampling(dut.readDelay + 2)
-      for (i <- 0 until 64) {
-        assert(dut.io.mem.read.rsp.toBigInt == i)
-        dut.clockDomain.waitSampling()
-      }
+      BmbRamTest.memRwTest(dut.io.mem, dut.clockDomain, dut.readDelay, 64)
     }
   }
 }
@@ -115,6 +118,31 @@ class CacheTest extends AnyFunSuite {
       dut.io.synapseDataBus.read.cmd.valid #= false
       dut.io.synapseDataBus.write.valid #= false
       BmbRamTest.bmbTest(dut.io.bmb, dut.clockDomain, 256)
+    }
+  }
+
+  test("rw test"){
+    complied.doSim { dut =>
+      SimTimeout(100000)
+      dut.clockDomain.forkStimulus(2)
+      dut.io.bmb.cmd.valid #= false
+      BmbRamTest.memRwTest(dut.io.synapseDataBus, dut.clockDomain, dut.readDelay, 256)
+    }
+  }
+
+  test("rw address conflict test"){
+    intercept[Throwable] {
+      complied.doSim{ dut =>
+        val readAddr = 0x010
+        val writeAddr = 0x020
+        dut.clockDomain.forkStimulus(2)
+        dut.io.bmb.cmd.valid #= false
+        dut.io.synapseDataBus.read.cmd.valid #= true
+        dut.io.synapseDataBus.read.cmd.payload #= readAddr
+        dut.io.synapseDataBus.write.valid #= true
+        dut.io.synapseDataBus.write.address #= writeAddr
+        dut.clockDomain.waitSampling(2)
+      }
     }
   }
 }

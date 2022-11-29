@@ -89,6 +89,31 @@ class Cache(p: BmbParameter) extends Component {
   }
 
   val rwLogic = new Area {
-    io.synapseDataBus.read.rsp := 0
+    val data = Vec(rams.zipWithIndex.map{case (ram, i) =>
+      val readValid = io.synapseDataBus.read.cmd.valid && io.synapseDataBus.read.cmd.payload.lsb.asUInt===i
+      val writeValid = io.synapseDataBus.write.valid && io.synapseDataBus.write.address.lsb.asUInt===i
+      when(readValid){
+        assert(
+          assertion = !writeValid,
+          message = L"rw conflict occur at Cache MemReadWrite: " ++
+              L"both read 0x${io.synapseDataBus.read.cmd.payload} " ++
+              L"and write 0x${io.synapseDataBus.write.address} at the same time",
+          severity =  FAILURE
+        )
+      }
+      // read advance
+      val address = Mux(readValid, io.synapseDataBus.read.cmd.payload, io.synapseDataBus.write.address)
+
+      val ret = ram.readWriteSync(
+        address = address>>1,
+        data = io.synapseDataBus.write.data,
+        enable = readValid || writeValid,
+        write = writeValid
+      )
+      RegNext(ret)
+    })
+
+    val rspSel = Delay(io.synapseDataBus.read.cmd.payload.lsb.asUInt, readDelay)
+    io.synapseDataBus.read.rsp := data(rspSel)
   }
 }
