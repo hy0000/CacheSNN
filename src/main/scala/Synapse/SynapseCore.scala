@@ -4,7 +4,6 @@ import CacheSNN.CacheSNN
 import RingNoC.NocInterfaceLocal
 import spinal.core._
 import spinal.lib._
-import spinal.lib.bus.bmb._
 import spinal.lib.bus.misc.SizeMapping
 import spinal.lib.bus.simple.{PipelinedMemoryBusConfig, PipelinedMemoryBusInterconnect}
 
@@ -51,16 +50,6 @@ object SynapseCore {
       }
     }
   }
-
-  val bmbMasterParameter = BmbParameter(
-    addressWidth = log2Up(AddrMapping.cache.size) + 1,
-    dataWidth = busDataWidth,
-    sourceWidth = 0,
-    contextWidth = 0,
-    lengthWidth = 8,
-    alignment = BmbParameter.BurstAlignement.LENGTH,
-    accessLatencyMin = 2
-  )
 
   val pipeLineMemoryBusMasterConfig = PipelinedMemoryBusConfig(
     addressWidth = log2Up(AddrMapping.cache.size) + 1,
@@ -111,7 +100,6 @@ class SynapseEvent extends SpikeEvent {
 
 class SynapseCore extends Component {
   import SynapseCore.AddrMapping
-  import SynapseCore.bmbMasterParameter
 
   val io = new Bundle {
     val noc = slave(NocInterfaceLocal(CacheSNN.nocBusWidth))

@@ -2,7 +2,6 @@ package Synapse
 
 import spinal.core._
 import spinal.lib._
-import spinal.lib.bus.bmb.{Bmb, BmbParameter}
 
 class Synapse extends Component {
   import SynapseCore._

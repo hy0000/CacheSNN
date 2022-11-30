@@ -5,7 +5,6 @@ import RingNoC.NocInterfaceLocal
 import Synapse.SynapseCore.pipeLineMemoryBusMasterConfig
 import spinal.core._
 import spinal.lib._
-import spinal.lib.bus.bmb.Bmb
 import spinal.lib.bus.simple.PipelinedMemoryBus
 
 class SynapseCtrl extends Component {
