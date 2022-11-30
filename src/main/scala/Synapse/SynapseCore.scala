@@ -55,8 +55,6 @@ object SynapseCore {
     addressWidth = log2Up(AddrMapping.cache.size) + 1,
     dataWidth = busDataWidth
   )
-
-  val postNeuronAddrWidth = AddrMapping.current.size / busByteCount
 }
 
 object CacheConfig {
@@ -82,9 +80,12 @@ case class MemReadWrite(dataWidth:Int, addrWidth:Int) extends Bundle with IMaste
 
 class SpikeEvent extends Bundle {
   val cacheAddr = UInt(CacheConfig.addrWidth bits)
-  val postNidOffset = UInt(SynapseCore.postNeuronAddrWidth bits)
+  //val postNidOffset = UInt(SynapseCore.postNeuronAddrWidth bits)
 }
 
+class SynapseEvent extends SpikeEvent {
+  val preSpike = Bits(SynapseCore.timeWindowWidth bits)
+}
 class ExpLutQuery extends Bundle with IMasterSlave {
   val x = Vec(UInt(log2Up(SynapseCore.timeWindowWidth) bits), 4)
   val y = Vec(SInt(16 bits), 4)
@@ -92,10 +93,6 @@ class ExpLutQuery extends Bundle with IMasterSlave {
     out(x)
     in(y)
   }
-}
-
-class SynapseEvent extends SpikeEvent {
-  val preSpike = Bits(SynapseCore.timeWindowWidth bits)
 }
 
 class SynapseCore extends Component {
