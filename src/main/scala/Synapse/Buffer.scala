@@ -110,5 +110,20 @@ class ExpLut(p:PipelinedMemoryBusConfig) extends Component {
     val bus = slave(PipelinedMemoryBus(p))
     val query = slave(new ExpLutQuery)
   }
-  stub()
+
+  val ram = Mem(SInt(16 bits), SynapseCore.timeWindowWidth)
+
+  val (cmd, cnt) = io.bus.cmd.repeat(p.dataWidth / 16)
+  cmd.freeRun()
+  io.bus.rsp.setIdle()
+  val data = cmd.data.subdivideIn(16 bits)(cnt).asBits.asSInt
+  ram.write(
+    address = (cmd.address >> log2Up(SynapseCore.busByteCount)) @@ cnt,
+    data = data,
+    enable = cmd.valid && cmd.write
+  )
+
+  for((x, y) <- io.query.x.zip(io.query.y)){
+    y := ram.readSync(x)
+  }
 }

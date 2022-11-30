@@ -1,6 +1,6 @@
 package Synapse
 
-import CacheSNN.CacheSnnTest.simConfig
+import CacheSNN.CacheSnnTest._
 import org.scalatest.funsuite.AnyFunSuite
 import spinal.core.sim._
 import spinal.core._
@@ -76,7 +76,7 @@ object BufferTest {
 
 class BufferTest extends AnyFunSuite {
   val size = 8 KiB
-  val p = PipelinedMemoryBusConfig(log2Up(size), 64)
+  val p = PipelinedMemoryBusConfig(log2Up(size), SynapseCore.busDataWidth)
   val complied = simConfig.compile(new Buffer(p, size))
 
   test("bus test") {
@@ -101,7 +101,7 @@ class BufferTest extends AnyFunSuite {
 
 class CacheTest extends AnyFunSuite {
   val size = 128 KiB
-  val p = PipelinedMemoryBusConfig(log2Up(size), 64)
+  val p = PipelinedMemoryBusConfig(log2Up(size), SynapseCore.busDataWidth)
   val complied = simConfig.compile(new Cache(p))
 
   test("bmb test") {
@@ -135,6 +135,44 @@ class CacheTest extends AnyFunSuite {
         dut.io.synapseData.write.valid #= true
         dut.io.synapseData.write.address #= writeAddr
         dut.clockDomain.waitSampling(2)
+      }
+    }
+  }
+}
+
+class ExpLutTest extends AnyFunSuite {
+  val size = 32 Byte
+  val p = PipelinedMemoryBusConfig(log2Up(size), SynapseCore.busDataWidth)
+  val complied = simConfig.compile(new ExpLut(p))
+
+  test("write and read test"){
+    complied.doSim {dut =>
+      dut.clockDomain.forkStimulus(2)
+      val data = Seq.fill(SynapseCore.timeWindowWidth)(randomInt16)
+      val rawData = data.grouped(SynapseCore.busDataWidth/16).map(v => vToRaw(v, 16))
+      // write data
+      dut.io.bus.cmd.write #= true
+      dut.io.bus.cmd.valid #= true
+      for((d, i) <- rawData.zipWithIndex) {
+        dut.io.bus.cmd.address #= i << log2Up(dut.io.bus.config.dataWidth / 8)
+        dut.io.bus.cmd.data #= d
+        dut.clockDomain.waitSamplingWhere(dut.io.bus.cmd.ready.toBoolean)
+      }
+      dut.io.bus.cmd.valid #= false
+      // read test
+      val xSeq = Seq.tabulate(100, 4){(_, _) => Random.nextInt(4)}
+      fork{
+        for(x <- xSeq){
+          dut.io.query.x.zip(x).foreach(z => z._1 #= z._2)
+          dut.clockDomain.waitSampling()
+        }
+      }
+      dut.clockDomain.waitSampling(dut.readDelay + 1)
+      for(x <- xSeq){
+        for((y, xi) <- dut.io.query.y.zip(x)){
+          assert(y.toInt==data(xi))
+        }
+        dut.clockDomain.waitSampling()
       }
     }
   }
