@@ -2,53 +2,45 @@ package Synapse
 
 import CacheSNN.CacheSnnTest.simConfig
 import org.scalatest.funsuite.AnyFunSuite
-import spinal.lib.sim._
 import spinal.core.sim._
 import spinal.core._
-import spinal.lib.bus.bmb.Bmb.Cmd.Opcode
-import spinal.lib.bus.bmb.{Bmb, BmbParameter}
+import spinal.lib.bus.simple._
 
 import scala.util.Random
 
-object BmbRamTest {
-  def bmbTest(bmb:Bmb, clockDomain: ClockDomain, n:Int): Unit ={
+object BufferTest {
+  def busTest(bus:PipelinedMemoryBus, clockDomain: ClockDomain, n:Int): Unit ={
 
     def clearValid(): Unit ={
       if(Random.nextInt(10)<4){
-        bmb.cmd.valid #= false
+        bus.cmd.valid #= false
         clockDomain.waitSampling(Random.nextInt(4))
       }
     }
 
-    bmb.cmd.valid #= false
-    StreamReadyRandomizer(bmb.rsp, clockDomain)
+    val wordByteWith = log2Up(bus.config.dataWidth / 8)
+
+    bus.cmd.valid #= false
     fork {
-      bmb.cmd.opcode #= Opcode.WRITE
+      bus.cmd.write #= true
       for (i <- 0 until n) {
-        bmb.cmd.valid #= true
-        bmb.cmd.context #= i
-        bmb.cmd.address #= i << bmb.p.access.wordRangeLength
-        bmb.cmd.data #= i
-        clockDomain.waitSamplingWhere(bmb.cmd.ready.toBoolean)
+        bus.cmd.valid #= true
+        bus.cmd.address #= i << wordByteWith
+        bus.cmd.data #= i
+        clockDomain.waitSamplingWhere(bus.cmd.ready.toBoolean)
         clearValid()
       }
-      bmb.cmd.opcode #= Opcode.READ
+      bus.cmd.write #= false
       for (i <- 0 until n) {
-        bmb.cmd.context #= i
-        bmb.cmd.valid #= true
-        bmb.cmd.address #= i << bmb.p.access.wordRangeLength
-        clockDomain.waitSamplingWhere(bmb.cmd.ready.toBoolean)
+        bus.cmd.valid #= true
+        bus.cmd.address #= i << wordByteWith
+        clockDomain.waitSamplingWhere(bus.cmd.ready.toBoolean)
         clearValid()
       }
     }
     for (i <- 0 until n) {
-      clockDomain.waitSamplingWhere(bmb.rsp.valid.toBoolean && bmb.rsp.ready.toBoolean)
-      assert(bmb.rsp.context.toInt == i)
-    }
-    for (i <- 0 until 64) {
-      clockDomain.waitSamplingWhere(bmb.rsp.valid.toBoolean && bmb.rsp.ready.toBoolean)
-      assert(bmb.rsp.context.toInt == i)
-      assert(bmb.rsp.data.toBigInt == i)
+      clockDomain.waitSamplingWhere(bus.rsp.valid.toBoolean)
+      assert(bus.rsp.data.toBigInt == i)
     }
   }
 
@@ -82,33 +74,34 @@ object BmbRamTest {
   }
 }
 
-class BmbRamTest extends AnyFunSuite {
+class BufferTest extends AnyFunSuite {
   val size = 8 KiB
-  val p = BmbParameter(log2Up(size/8), 64, 0, 8, 3)
-  val complied = simConfig.compile(new BmbRam(p, size))
+  val p = PipelinedMemoryBusConfig(log2Up(size), 64)
+  val complied = simConfig.compile(new Buffer(p, size))
 
-  test("bmb test"){
-    complied.doSim{dut =>
+  test("bus test") {
+    complied.doSim { dut =>
       SimTimeout(100000)
       dut.clockDomain.forkStimulus(2)
       dut.io.mem.read.cmd.valid #= false
       dut.io.mem.write.valid #= false
-      BmbRamTest.bmbTest(dut.io.bmb, dut.clockDomain, 128)
+      BufferTest.busTest(dut.io.bus, dut.clockDomain, 128)
     }
   }
 
-  test("mem rw test"){
-    complied.doSim{dut =>
+  test("mem rw test") {
+    complied.doSim { dut =>
       SimTimeout(100000)
       dut.clockDomain.forkStimulus(2)
-      dut.io.bmb.cmd.valid #= false
-      BmbRamTest.memRwTest(dut.io.mem, dut.clockDomain, dut.readDelay, 64)
+      dut.io.bus.cmd.valid #= false
+      BufferTest.memRwTest(dut.io.mem, dut.clockDomain, dut.readDelay, 64)
     }
   }
 }
 
 class CacheTest extends AnyFunSuite {
-  val p = BmbParameter(log2Up(CacheConfig.size / 8), 64, 0, 8, 3)
+  val size = 128 KiB
+  val p = PipelinedMemoryBusConfig(log2Up(size), 64)
   val complied = simConfig.compile(new Cache(p))
 
   test("bmb test") {
@@ -117,7 +110,7 @@ class CacheTest extends AnyFunSuite {
       dut.clockDomain.forkStimulus(2)
       dut.io.synapseData.read.cmd.valid #= false
       dut.io.synapseData.write.valid #= false
-      BmbRamTest.bmbTest(dut.io.bmb, dut.clockDomain, 256)
+      BufferTest.busTest(dut.io.bus, dut.clockDomain, 256)
     }
   }
 
@@ -125,8 +118,8 @@ class CacheTest extends AnyFunSuite {
     complied.doSim { dut =>
       SimTimeout(100000)
       dut.clockDomain.forkStimulus(2)
-      dut.io.bmb.cmd.valid #= false
-      BmbRamTest.memRwTest(dut.io.synapseData, dut.clockDomain, dut.readDelay, 256)
+      dut.io.bus.cmd.valid #= false
+      BufferTest.memRwTest(dut.io.synapseData, dut.clockDomain, dut.readDelay, 256)
     }
   }
 
@@ -136,7 +129,7 @@ class CacheTest extends AnyFunSuite {
         val readAddr = 0x010
         val writeAddr = 0x020
         dut.clockDomain.forkStimulus(2)
-        dut.io.bmb.cmd.valid #= false
+        dut.io.bus.cmd.valid #= false
         dut.io.synapseData.read.cmd.valid #= true
         dut.io.synapseData.read.cmd.payload #= readAddr
         dut.io.synapseData.write.valid #= true

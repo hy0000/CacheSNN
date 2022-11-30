@@ -3,10 +3,10 @@ package Synapse
 import CacheSNN.CacheSNN
 import RingNoC.NocInterfaceLocal
 import spinal.core._
-import spinal.core.fiber.Handle
 import spinal.lib._
 import spinal.lib.bus.bmb._
 import spinal.lib.bus.misc.SizeMapping
+import spinal.lib.bus.simple.{PipelinedMemoryBusConfig, PipelinedMemoryBusInterconnect}
 
 import scala.collection.immutable.ListMap
 
@@ -34,6 +34,12 @@ object SynapseCore {
       )
     }
 
+    def pipelineMemoryBusConfig: ListMap[String, PipelinedMemoryBusConfig] = {
+      this().map{case (k, v) =>
+        k -> PipelinedMemoryBusConfig(log2Up(v.size), busDataWidth)
+      }
+    }
+
     def printAddressMapping(): Unit = {
       this().foreach{case (name, mapping) =>
         val size = if (mapping.size < (1 KiB)) {
@@ -54,6 +60,11 @@ object SynapseCore {
     lengthWidth = 8,
     alignment = BmbParameter.BurstAlignement.LENGTH,
     accessLatencyMin = 2
+  )
+
+  val pipeLineMemoryBusMasterConfig = PipelinedMemoryBusConfig(
+    addressWidth = log2Up(AddrMapping.cache.size) + 1,
+    dataWidth = busDataWidth
   )
 
   val postNeuronAddrWidth = AddrMapping.current.size / busByteCount
@@ -85,7 +96,7 @@ class SpikeEvent extends Bundle {
   val postNidOffset = UInt(SynapseCore.postNeuronAddrWidth bits)
 }
 
-class ExpLutBus extends Bundle with IMasterSlave {
+class ExpLutQuery extends Bundle with IMasterSlave {
   val x = Vec(UInt(log2Up(SynapseCore.timeWindowWidth) bits), 4)
   val y = Vec(SInt(16 bits))
   override def asMaster(): Unit = {
@@ -109,69 +120,36 @@ class SynapseCore extends Component {
   val synapseCtrl = new SynapseCtrl
   val synapse = new Synapse
 
-  val bmbInterconnect = BmbInterconnectGenerator()
+  val slaveBusConfig = AddrMapping.pipelineMemoryBusConfig
 
-  case class BmbSlave(mapping:SizeMapping){
-    val bus = Handle[Bmb]
-    val requirements = Handle[BmbAccessParameter]
-    val accessCapabilities = BmbOnChipRam.busCapabilities(mapping.size, 64)
-    val parameter = Handle(requirements.toBmbParameter())
-  }
+  val cache = new Cache(slaveBusConfig("cache"))
+  val currentRam = new Buffer(slaveBusConfig("current"), AddrMapping.current.size)
+  val preSpikeRam = new Buffer(slaveBusConfig("preSpike"), AddrMapping.preSpike.size)
+  val postSpikeRam = new Buffer(slaveBusConfig("postSpike"), AddrMapping.postSpike.size)
+  val ltpLut = new ExpLut(slaveBusConfig("ltpLut"))
+  val ltdLut = new ExpLut(slaveBusConfig("ltdLut"))
 
-  case class BmbMaster(bus:Handle[Bmb], parameter:BmbParameter){
-    val accessParameter = Handle(parameter.access)
-  }
+  val interconnect = PipelinedMemoryBusInterconnect()
 
-  val bmbSlave = AddrMapping().map{case (k, v) => k -> BmbSlave(v)}
-  val bmbMaster = Map(
-    "cache" -> BmbMaster(Handle(synapseCtrl.io.cacheBus), bmbMasterParameter),
-    "buffer" -> BmbMaster(Handle(synapseCtrl.io.bufferBus), bmbMasterParameter),
+  interconnect.addSlave(cache.io.bus, AddrMapping.cache)
+  interconnect.addSlave(currentRam.io.bus, AddrMapping.current)
+  interconnect.addSlave(preSpikeRam.io.bus, AddrMapping.preSpike)
+  interconnect.addSlave(postSpikeRam.io.bus, AddrMapping.postSpike)
+  interconnect.addSlave(ltpLut.io.bus, AddrMapping.ltpLut)
+  interconnect.addSlave(ltdLut.io.bus, AddrMapping.ltdLut)
+
+  interconnect.addMaster(synapseCtrl.io.cacheBus, Seq(cache.io.bus))
+  interconnect.addMaster(
+    synapseCtrl.io.bufferBus,
+    Seq(currentRam.io.bus, preSpikeRam.io.bus, postSpikeRam.io.bus, ltpLut.io.bus, ltdLut.io.bus)
   )
-
-  for(s <- bmbSlave.values){
-    bmbInterconnect.addSlave(
-      accessCapabilities = s.accessCapabilities,
-      accessRequirements = s.requirements,
-      bus = s.bus,
-      mapping = s.mapping
-    )
-  }
-
-  for(m <- bmbMaster.values){
-    bmbInterconnect.addMaster(
-      accessRequirements = m.accessParameter,
-      bus = m.bus
-    )
-  }
-
-  implicit def getSlaveBmb(s: BmbSlave): Handle[Bmb] = s.bus
-  implicit def getMasterBmb(m: BmbMaster): Handle[Bmb] = m.bus
-
-  bmbInterconnect.addConnection(bmbMaster("cache"),  bmbSlave("cache"))
-  bmbInterconnect.addConnection(bmbMaster("buffer"), bmbSlave("preSpike"))
-  bmbInterconnect.addConnection(bmbMaster("buffer"), bmbSlave("postSpike"))
-  bmbInterconnect.addConnection(bmbMaster("buffer"), bmbSlave("current"))
-  bmbInterconnect.addConnection(bmbMaster("buffer"), bmbSlave("ltdLut"))
-  bmbInterconnect.addConnection(bmbMaster("buffer"), bmbSlave("ltpLut"))
-
-  val cache        = Handle(new Cache(bmbSlave("cache").parameter))
-  val currentRam   = Handle(new BmbRam(bmbSlave("current").parameter, AddrMapping.current.size))
-  val preSpikeRam  = Handle(new BmbRam(bmbSlave("preSpike").parameter, AddrMapping.preSpike.size))
-  val postSpikeRam = Handle(new BmbRam(bmbSlave("postSpike").parameter, AddrMapping.postSpike.size))
-  val ltpLut       = Handle(new ExpLut(bmbSlave("ltpLut").parameter))
-  val ltdLut       = Handle(new ExpLut(bmbSlave("ltdLut").parameter))
-
-  bmbSlave("cache").bus.load(cache.io.bmb)
-  bmbSlave("current").bus.load(currentRam.io.bmb)
-  bmbSlave("preSpike").bus.load(preSpikeRam.io.bmb)
-  bmbSlave("postSpike").bus.load(postSpikeRam.io.bmb)
-  bmbSlave("ltpLut").bus.load(ltpLut.io.bmb)
-  bmbSlave("ltdLut").bus.load(ltdLut.io.bmb)
 
   synapseCtrl.io.noc <> io.noc
   synapseCtrl.io.synapseEvent <> synapse.io.synapseEvent
   synapse.io.synapseData <> cache.io.synapseData
   synapse.io.current <> currentRam.io.mem
+  synapse.io.ltdQuery <> ltdLut.io.query
+  synapse.io.ltpQuery <> ltpLut.io.query
   postSpikeRam.io.mem.read <> synapse.io.postSpike
   postSpikeRam.io.mem.write.setIdle()
 }
