@@ -2,35 +2,46 @@ package Synapse
 
 import CacheSNN.CacheSNN
 import RingNoC.NocInterfaceLocal
-import Synapse.SynapseCore.AddrMapping
 import spinal.core._
 import spinal.core.fiber.Handle
 import spinal.lib._
 import spinal.lib.bus.bmb._
 import spinal.lib.bus.misc.SizeMapping
 
+import scala.collection.immutable.ListMap
+
 object SynapseCore {
   val busDataWidth = 64
   val busByteCount = busDataWidth / 8
+  val timeWindowWidth = 16
 
   object AddrMapping {
     val cache      = SizeMapping(0, CacheConfig.size)
     val current    = SizeMapping(cache.base + cache.size, 8 KiB)
     val preSpike   = SizeMapping(current.base + current.size, 4 KiB)
     val postSpike  = SizeMapping(preSpike.base + preSpike.size, 4 KiB)
+    val ltpLut     = SizeMapping(postSpike.base + postSpike.size, 32 Byte)
+    val ltdLut     = SizeMapping(ltpLut.base + ltpLut.size, 32 Byte)
 
-    def apply(): Map[String, SizeMapping] ={
-      Map(
+    def apply(): ListMap[String, SizeMapping] ={
+      ListMap(
         "cache" -> cache,
         "current" -> current,
         "preSpike" -> preSpike,
-        "postSpike" -> postSpike
+        "postSpike" -> postSpike,
+        "ltpLut" -> ltpLut,
+        "ltdLut" -> ltdLut
       )
     }
 
     def printAddressMapping(): Unit = {
       this().foreach{case (name, mapping) =>
-        println(f"$name%-9s 0x${mapping.base.hexString(20)} ${mapping.size / 1024}%3d KB")
+        val size = if (mapping.size < (1 KiB)) {
+          f"${mapping.size}%3d  B"
+        } else {
+          f"${mapping.size / 1024}%3d KB"
+        }
+        println(f"$name%-9s 0x${mapping.base.hexString(20)} " + size)
       }
     }
   }
@@ -74,8 +85,17 @@ class SpikeEvent extends Bundle {
   val postNidOffset = UInt(SynapseCore.postNeuronAddrWidth bits)
 }
 
+class ExpLutBus extends Bundle with IMasterSlave {
+  val x = Vec(UInt(log2Up(SynapseCore.timeWindowWidth) bits), 4)
+  val y = Vec(SInt(16 bits))
+  override def asMaster(): Unit = {
+    out(x)
+    in(y)
+  }
+}
+
 class SynapseEvent extends SpikeEvent {
-  val preSpike = Bits(16 bits)
+  val preSpike = Bits(SynapseCore.timeWindowWidth bits)
 }
 
 class SynapseCore extends Component {
@@ -131,16 +151,22 @@ class SynapseCore extends Component {
   bmbInterconnect.addConnection(bmbMaster("buffer"), bmbSlave("preSpike"))
   bmbInterconnect.addConnection(bmbMaster("buffer"), bmbSlave("postSpike"))
   bmbInterconnect.addConnection(bmbMaster("buffer"), bmbSlave("current"))
+  bmbInterconnect.addConnection(bmbMaster("buffer"), bmbSlave("ltdLut"))
+  bmbInterconnect.addConnection(bmbMaster("buffer"), bmbSlave("ltpLut"))
 
   val cache        = Handle(new Cache(bmbSlave("cache").parameter))
   val currentRam   = Handle(new BmbRam(bmbSlave("current").parameter, AddrMapping.current.size))
   val preSpikeRam  = Handle(new BmbRam(bmbSlave("preSpike").parameter, AddrMapping.preSpike.size))
   val postSpikeRam = Handle(new BmbRam(bmbSlave("postSpike").parameter, AddrMapping.postSpike.size))
+  val ltpLut       = Handle(new ExpLut(bmbSlave("ltpLut").parameter))
+  val ltdLut       = Handle(new ExpLut(bmbSlave("ltdLut").parameter))
 
   bmbSlave("cache").bus.load(cache.io.bmb)
   bmbSlave("current").bus.load(currentRam.io.bmb)
   bmbSlave("preSpike").bus.load(preSpikeRam.io.bmb)
   bmbSlave("postSpike").bus.load(postSpikeRam.io.bmb)
+  bmbSlave("ltpLut").bus.load(ltpLut.io.bmb)
+  bmbSlave("ltdLut").bus.load(ltdLut.io.bmb)
 
   synapseCtrl.io.noc <> io.noc
   synapseCtrl.io.synapseEvent <> synapse.io.synapseEvent

@@ -14,6 +14,8 @@ class Synapse extends Component {
     val synapseData = master(MemReadWrite(64, CacheConfig.addrWidth))
     val synapseEventDone = master(Event)
     val postSpike = master(MemReadPort(Bits(64 bits), spikeBufferAddrWidth))
+    val ltpLutBus = master(new ExpLutBus)
+    val ltdLutBus = master(new ExpLutBus)
     val current = master(MemReadWrite(64, currentBufferAddrWidth))
   }
   stub()

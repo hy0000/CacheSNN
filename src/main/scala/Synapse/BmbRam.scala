@@ -117,3 +117,13 @@ class Cache(p: BmbParameter) extends Component {
     io.synapseData.read.rsp := data(rspSel)
   }
 }
+
+class ExpLut(p:BmbParameter) extends Component {
+  def readDelay = 1
+
+  val io = new Bundle {
+    val bmb = slave(Bmb(p))
+    val bus = slave(new ExpLutBus)
+  }
+  stub()
+}
