@@ -85,7 +85,10 @@ class SpikeEvent extends Bundle {
 
 class SynapseEvent extends SpikeEvent {
   val preSpike = Bits(SynapseCore.timeWindowWidth bits)
+  val learning = Bool()
+  val virtual = Bool()
 }
+
 class ExpLutQuery extends Bundle with IMasterSlave {
   val x = Vec(UInt(log2Up(SynapseCore.timeWindowWidth) bits), 4)
   val y = Vec(SInt(16 bits), 4)
