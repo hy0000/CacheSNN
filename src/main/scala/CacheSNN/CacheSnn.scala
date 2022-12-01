@@ -20,6 +20,10 @@ object CacheSNN {
   val apbConfig = Apb3Config(32, 64)
 }
 
+object AER {
+  val nidWidth = 16
+}
+
 class CacheSNN extends Component {
   val io = new Bundle {
     val externalMemory = master(Axi4(CacheSNN.externalMemoryAxi4Config))

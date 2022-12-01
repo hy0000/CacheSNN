@@ -1,11 +1,15 @@
 package Synapse
 
-import CacheSNN.CacheSNN
+import CacheSNN.{CacheSNN, AER}
 import RingNoC.NocInterfaceLocal
 import Synapse.SynapseCore.pipeLineMemoryBusMasterConfig
 import spinal.core._
 import spinal.lib._
 import spinal.lib.bus.simple.PipelinedMemoryBus
+
+class Spike extends Bundle {
+  val nid = UInt(AER.nidWidth bits)
+}
 
 class SynapseCtrl extends Component {
   val io = new Bundle {
