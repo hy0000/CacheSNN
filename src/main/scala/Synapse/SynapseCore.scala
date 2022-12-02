@@ -1,6 +1,6 @@
 package Synapse
 
-import CacheSNN.CacheSNN
+import CacheSNN.{CacheSNN, AER}
 import RingNoC.NocInterfaceLocal
 import spinal.core._
 import spinal.lib._
@@ -78,9 +78,15 @@ case class MemReadWrite(dataWidth:Int, addrWidth:Int) extends Bundle with IMaste
   }
 }
 
-class SpikeEvent extends Bundle {
+class Spike extends Bundle {
+  val nid = UInt(AER.nidWidth bits)
+}
+
+class SpikeEvent extends Spike {
   val cacheAddr = UInt(CacheConfig.addrWidth bits)
-  //val postNidOffset = UInt(SynapseCore.postNeuronAddrWidth bits)
+
+  def cacheAllocateFailed: Bool = cacheAddr.andR
+  def setCacheAllocateFail(): Unit = cacheAddr.setAll()
 }
 
 class SynapseEvent extends SpikeEvent {
