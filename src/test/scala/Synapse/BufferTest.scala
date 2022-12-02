@@ -104,7 +104,7 @@ class CacheTest extends AnyFunSuite {
   val p = PipelinedMemoryBusConfig(log2Up(size), SynapseCore.busDataWidth)
   val complied = simConfig.compile(new Cache(p))
 
-  test("bmb test") {
+  test("bus test") {
     complied.doSim { dut =>
       SimTimeout(100000)
       dut.clockDomain.forkStimulus(2)
@@ -119,7 +119,7 @@ class CacheTest extends AnyFunSuite {
       SimTimeout(100000)
       dut.clockDomain.forkStimulus(2)
       dut.io.bus.cmd.valid #= false
-      BufferTest.memRwTest(dut.io.synapseData, dut.clockDomain, dut.readDelay, 256)
+      BufferTest.memRwTest(dut.io.synapseData, dut.clockDomain, dut.synapseReadDelay, 256)
     }
   }
 

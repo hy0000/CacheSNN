@@ -40,11 +40,12 @@ class Buffer(p:PipelinedMemoryBusConfig, size:BigInt) extends Component {
 }
 
 class Cache(p:PipelinedMemoryBusConfig) extends Component {
-  def readDelay = 2
+  def busReadDelay = 2
+  def synapseReadDelay = 3
 
   val io = new Bundle {
     val bus = slave(PipelinedMemoryBus(p))
-    val synapseData = slave(MemReadWrite(SynapseCore.busDataWidth, CacheConfig.addrWidth))
+    val synapseData = slave(MemReadWrite(SynapseCore.busDataWidth, CacheConfig.wordAddrWidth))
   }
 
   val rams = Array.fill(2)(
@@ -56,8 +57,8 @@ class Cache(p:PipelinedMemoryBusConfig) extends Component {
     val busAddress = io.bus.cmd.address >> log2Up(SynapseCore.busByteCount)
     val readValid = !io.bus.cmd.write && io.bus.cmd.valid
     val ramSel = busAddress.lsb.asUInt
-    val ramSelDelay = Delay(ramSel, readDelay)
-    val readValidDelay = Delay(readValid, readDelay, init = False)
+    val ramSelDelay = Delay(ramSel, busReadDelay)
+    val readValidDelay = Delay(readValid, busReadDelay, init = False)
 
     val data = Vec(rams.zipWithIndex.map { case (ram, i) =>
       val ret = ram.readWriteSync(
@@ -66,7 +67,7 @@ class Cache(p:PipelinedMemoryBusConfig) extends Component {
         enable = io.bus.cmd.fire && ramSel === i,
         write = io.bus.cmd.write,
       )
-      RegNext(ret)
+      Delay(ret, busReadDelay - 1)
     })(ramSelDelay)
 
     io.bus.rsp.data := data
@@ -95,10 +96,10 @@ class Cache(p:PipelinedMemoryBusConfig) extends Component {
         enable = readValid || writeValid,
         write = writeValid
       )
-      RegNext(ret)
+      Delay(ret, synapseReadDelay - 1)
     })
 
-    val rspSel = Delay(io.synapseData.read.cmd.payload.lsb.asUInt, readDelay)
+    val rspSel = Delay(io.synapseData.read.cmd.payload.lsb.asUInt, synapseReadDelay)
     io.synapseData.read.rsp := data(rspSel)
   }
 }
