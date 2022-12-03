@@ -61,7 +61,7 @@ object CacheConfig {
   val size = 128 KiB
   val lines = 128
   val ways = 8
-  val addrWidth = log2Up(size / SynapseCore.busByteCount)
+  val wordAddrWidth = log2Up(size / SynapseCore.busByteCount)
 }
 
 case class MemWriteCmd(dataWidth:Int, addrWidth:Int) extends Bundle {
@@ -83,7 +83,7 @@ class Spike extends Bundle {
 }
 
 class SpikeEvent extends Spike {
-  val cacheAddr = UInt(CacheConfig.addrWidth bits)
+  val cacheAddr = UInt(CacheConfig.wordAddrWidth bits)
 
   def cacheAllocateFailed: Bool = cacheAddr.andR
   def setCacheAllocateFail(): Unit = cacheAddr.setAll()
@@ -91,7 +91,6 @@ class SpikeEvent extends Spike {
 
 class SynapseEvent extends SpikeEvent {
   val preSpike = Bits(SynapseCore.timeWindowWidth bits)
-  val learning = Bool()
   val virtual = Bool()
 }
 

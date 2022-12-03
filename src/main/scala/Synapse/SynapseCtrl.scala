@@ -26,8 +26,8 @@ class SynapseData extends Bundle {
   def getLen = data(lenFieldRange).asUInt
   def getNid = data(nidFieldRange).asUInt
   def setHeadField(nid:UInt, len: UInt): Unit ={
-    data(lenFieldRange) := len
-    data(nidFieldRange) := nid
+    data(lenFieldRange) := len.asBits
+    data(nidFieldRange) := nid.asBits
   }
 }
 
