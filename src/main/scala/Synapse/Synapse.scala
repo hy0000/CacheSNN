@@ -1,5 +1,6 @@
 package Synapse
 
+import jdk.nashorn.internal.runtime.regexp.RegExpMatcher
 import spinal.core._
 import spinal.lib._
 import spinal.lib.pipeline.Connection.M2S
@@ -12,29 +13,46 @@ class SynapseCSR extends Bundle {
 
 class SpikeTimeDiff extends Component {
   import SynapseCore.timeWindowWidth
+  def postSpikeInputDelay = 1
+  def outputDelay = 2
+
   val io = new Bundle {
     val preSpike = in Bits(timeWindowWidth bits)
     val postSpike = in Vec(Bits(timeWindowWidth bits), 4)
-    val ltp, ltd = out Vec(UInt(log2Up(timeWindowWidth) bits), 4)
+    val ltpDeltaT, ltdDeltaT = out Vec(UInt(log2Up(timeWindowWidth) bits), 4)
+    val ltpValid, ltdValid = out Vec(Bool(), 4)
   }
 
-  val ohPrePreSpike = OHMasking.first(io.preSpike.dropLow(1)) ## B"0"
-  val ppsMask = (ohPrePreSpike.asUInt-1).asBits | ohPrePreSpike
-  val postSpikeMasked = io.postSpike.map(_ & ppsMask)
-  val ohLtpPostSpike = postSpikeMasked.map{ postSpike =>
-    OHMasking.roundRobin(
-      postSpike.reversed, (ohPrePreSpike << 1).reversed
-    ).reversed
-  }
-  val ohLtdPostSpike = postSpikeMasked.map{ posSpike =>
-    OHMasking.first(posSpike)
+  // pps: pre pre spike
+  case class Pps() extends Bundle {
+    val oh = Bits(timeWindowWidth bits)
+    val time = UInt(log2Up(timeWindowWidth) bits)
+    val exist = Bool()
+    val mask = Bits(timeWindowWidth bits)
   }
 
-  val ohLtdPostSpikeStage = RegNext(ohLtdPostSpike)
-  val ohLtpPostSpikeStage = RegNext(ohLtpPostSpike)
+  val pps = Pps()
+  pps.oh := OHMasking.first(io.preSpike.dropLow(1)) ## B"0"
+  pps.time := OHToUInt(pps.oh)
+  pps.exist := io.preSpike.dropLow(1).orR
+  pps.mask := (pps.oh.asUInt - 1).asBits | pps.oh
 
-  io.ltd := Vec(ohLtdPostSpikeStage.map(s => OHToUInt(s)))
-  io.ltp := Vec(ohLtpPostSpikeStage.map(s => OHToUInt(s)))
+  val ppsReg = RegNext(pps)
+  val virtual = RegNext(!io.preSpike.lsb)
+
+  val postSpikeMasked = io.postSpike.map(_ & ppsReg.mask)
+  val ohLtpPostSpike = postSpikeMasked.map(s => OHMasking.last(s).asUInt)
+  val ohLtdPostSpike = postSpikeMasked.map(s => OHMasking.first(s).asUInt)
+
+  val ltpValid = Vec(ohLtpPostSpike.map(_.orR && !virtual))
+  val ltdValid = Vec(ohLtdPostSpike.map(_.orR))
+  val ltpDeltaT = Vec(ohLtpPostSpike.map(s => ppsReg.time - OHToUInt(s)))
+  val ltdDeltaT = Vec(ohLtpPostSpike.map(s => OHToUInt(s)))
+
+  io.ltpValid := RegNext(ltpValid)
+  io.ltdValid := RegNext(ltdValid)
+  io.ltpDeltaT := RegNext(ltpDeltaT)
+  io.ltdDeltaT := RegNext(ltdDeltaT)
 }
 
 class Synapse extends Component {
