@@ -150,6 +150,7 @@ class ExpLutTest extends AnyFunSuite {
       dut.clockDomain.forkStimulus(2)
       val data = Seq.fill(SynapseCore.timeWindowWidth)(randomInt16)
       val rawData = data.grouped(SynapseCore.busDataWidth/16).map(v => vToRaw(v, 16))
+      dut.io.query.x.foreach(_.valid #= false)
       // write data
       dut.io.bus.cmd.write #= true
       dut.io.bus.cmd.valid #= true
@@ -160,19 +161,25 @@ class ExpLutTest extends AnyFunSuite {
       }
       dut.io.bus.cmd.valid #= false
       // read test
-      val xSeq = Seq.tabulate(100, 4){(_, _) => Random.nextInt(4)}
+      case class Query(x:Int, valid:Boolean){
+        val y = if(valid) data(x) else 0
+      }
+      val query = Seq.tabulate(100, 4){(_, _) => Query(Random.nextInt(4), Random.nextBoolean())}
       fork{
-        for(x <- xSeq){
-          dut.io.query.x.zip(x).foreach(z => z._1 #= z._2)
+        for(q <- query){
+          dut.io.query.x.zip(q).foreach{ case(x, q) =>
+            x.payload #= q.x
+            x.valid #= q.valid
+          }
           dut.clockDomain.waitSampling()
         }
       }
-      dut.clockDomain.waitSampling(dut.readDelay + 1)
-      for(x <- xSeq){
-        for((y, xi) <- dut.io.query.y.zip(x)){
-          assert(y.toInt==data(xi))
-        }
+      dut.clockDomain.waitSampling(dut.readDelay)
+      for(q <- query){
         dut.clockDomain.waitSampling()
+        for((y, qi) <- dut.io.query.y.zip(q)){
+          assert(y.toInt==qi.y)
+        }
       }
     }
   }

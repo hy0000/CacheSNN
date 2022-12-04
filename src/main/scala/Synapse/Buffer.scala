@@ -125,6 +125,10 @@ class ExpLut(p:PipelinedMemoryBusConfig) extends Component {
   )
 
   for((x, y) <- io.query.x.zip(io.query.y)){
-    y := ram.readSync(x)
+    y := ram.readSync(x.payload, x.valid)
+    val valid = RegNext(x.valid, init = False)
+    when(!valid){
+      y := 0
+    }
   }
 }

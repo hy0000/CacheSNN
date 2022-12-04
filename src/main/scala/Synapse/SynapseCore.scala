@@ -95,7 +95,7 @@ class SynapseEvent extends SpikeEvent {
 }
 
 class ExpLutQuery extends Bundle with IMasterSlave {
-  val x = Vec(UInt(log2Up(SynapseCore.timeWindowWidth) bits), 4)
+  val x = Vec(Flow(UInt(log2Up(SynapseCore.timeWindowWidth) bits)), 4)
   val y = Vec(SInt(16 bits), 4)
   override def asMaster(): Unit = {
     out(x)
