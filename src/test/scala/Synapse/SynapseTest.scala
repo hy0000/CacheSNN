@@ -19,8 +19,6 @@ class SpikeTimeDiffTest extends AnyFunSuite {
 
   val nTestCase = 100
   val spikeMask = (0x1<<timeWindowWidth)-1
-  val postSpikeMask = spikeMask - 1
-  val deltaTUpBound = timeWindowWidth
 
   val complied = simConfig.compile(new SpikeTimeDiff)
 
@@ -33,7 +31,9 @@ class SpikeTimeDiffTest extends AnyFunSuite {
     val pps = 1 << ppsTime
     val preSpike = ((Random.nextInt() << ppsTime) | pps) & spikeMask | (if (virtual) 0 else 1)
 
+    // ltp time should not earlier than ppsTime
     private val ltpTime: Seq[Int] = Seq.fill(4)(if(ppsValid) Random.nextInt(ppsTime) + 1 else Random.nextInt(15) + 1)
+    // ltd time should not earlier than ltp time
     private val ltdTime: Seq[Int] = ltpTime.map(t => Random.nextInt(t) + 1)
 
     val postSpikeFromPpsToPsExits = Seq.fill(4)(Random.nextBoolean())
@@ -41,6 +41,15 @@ class SpikeTimeDiffTest extends AnyFunSuite {
     val ltpValid = postSpikeFromPpsToPsExits.map(_ && ppsValid)
 
     val postSpike = (0 until 4).map{i =>
+      /*
+      preSpike   0 1 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1
+      pps            *
+      ppsToPs          * * * * * * * * * * * * * * * * *
+      postSpike  0 0 0 0 0 0 0 1 0 0 1 1 0 1 0 0 0 0 0 0
+      ltpGapMask 0 0 1 1 1 1 1 0 0 0 0 0 0 0 0 0 0 0 0 0
+      ltdGapMask 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 1 1 1 1 1
+      mask       1 1 0 0 0 0 0 1 1 1 1 1 1 1 0 0 0 0 0 0
+      */
       if(postSpikeFromPpsToPsExits(i)){
         val ltpGapMask = ((1 << ppsTime) - (1 << ltpTime(i))) << 1
         val ltdGapMaks = (1 << ltdTime(i)) - 1
@@ -87,7 +96,7 @@ class SpikeTimeDiffTest extends AnyFunSuite {
   }
 
   test("spike time diff test"){
-    complied.doSim(555815695){ dut =>
+    complied.doSim { dut =>
       val spikeSeq = Seq.fill(nTestCase)(RandomEventSim())
       testBench(dut, spikeSeq)
     }
