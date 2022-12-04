@@ -25,29 +25,32 @@ class SpikeTimeDiff extends Component {
 
   // pps: pre pre spike
   case class Pps() extends Bundle {
-    val oh = Bits(timeWindowWidth bits)
     val time = UInt(log2Up(timeWindowWidth) bits)
     val exist = Bool()
     val mask = Bits(timeWindowWidth bits)
   }
 
   val pps = Pps()
-  pps.oh := OHMasking.first(io.preSpike.dropLow(1)) ## B"0"
-  pps.time := OHToUInt(pps.oh)
-  pps.exist := io.preSpike.dropLow(1).orR
-  pps.mask := (pps.oh.asUInt - 1).asBits | pps.oh
+  val ppsOh = OHMasking.first(io.preSpike.dropLow(1)) ## B"0"
+  val ppsExist = io.preSpike.dropLow(1).orR
+  pps.time := OHToUInt(ppsOh)
+  pps.exist := ppsExist
+  pps.mask := (ppsOh.asUInt - 1).asBits | ppsOh
 
   val ppsReg = RegNext(pps)
   val virtual = RegNext(!io.preSpike.lsb)
 
   val postSpikeMasked = io.postSpike.map(_ & ppsReg.mask)
-  val ohLtpPostSpike = postSpikeMasked.map(s => OHMasking.last(s).asUInt)
-  val ohLtdPostSpike = postSpikeMasked.map(s => OHMasking.first(s).asUInt)
+  val ohLtpPostSpike = postSpikeMasked.map(s => OHMasking.last(s))
+  val ohLtdPostSpike = postSpikeMasked.map(s => OHMasking.first(s))
 
-  val ltpValid = Vec(ohLtpPostSpike.map(_.orR && !virtual))
-  val ltdValid = Vec(ohLtdPostSpike.map(_.orR))
+  val ltpValid = Vec(ohLtpPostSpike.map(_.orR && ppsReg.exist))
+  val ltdValid = Vec(ohLtdPostSpike.map(_.orR && !virtual))
   val ltpDeltaT = Vec(ohLtpPostSpike.map(s => ppsReg.time - OHToUInt(s)))
-  val ltdDeltaT = Vec(ohLtpPostSpike.map(s => OHToUInt(s)))
+  val ltdDeltaT = Vec(ohLtdPostSpike.map(s => OHToUInt(s)))
+
+  ltpValid.zip(ltpDeltaT).foreach(z => when(!z._1) {z._2 := 0})
+  ltdValid.zip(ltdDeltaT).foreach(z => when(!z._1) {z._2 := 0})
 
   io.ltpValid := RegNext(ltpValid)
   io.ltdValid := RegNext(ltdValid)
@@ -120,6 +123,11 @@ class Synapse extends Component {
     }
     val s7 = new Stage(connection = M2S()) {
 
+    }
+
+    val a:Seq[Data] = ???
+    a.scanLeft(0){(acc, data) =>
+      acc + widthOf(data)
     }
   }
 }
