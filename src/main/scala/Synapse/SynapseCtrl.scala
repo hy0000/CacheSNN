@@ -13,7 +13,7 @@ class SynapseCtrl extends Component {
     val cacheBus = master(PipelinedMemoryBus(pipeLineMemoryBusMasterConfig))
     val bufferBus = master(PipelinedMemoryBus(pipeLineMemoryBusMasterConfig))
     val synapseEvent = master(Stream(new SynapseEvent))
-    val synapseEventDone = slave(Event)
+    val synapseEventDone = in Bool()
   }
   stub()
 }

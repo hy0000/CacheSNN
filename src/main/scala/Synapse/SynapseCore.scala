@@ -61,7 +61,7 @@ object CacheConfig {
   val size = 128 KiB
   val lines = 128
   val ways = 8
-  val wordAddrWidth = log2Up(size / SynapseCore.busByteCount)
+  val wordAddrWidth = log2Up(size / 8)
 }
 
 case class MemWriteCmd(dataWidth:Int, addrWidth:Int) extends Bundle {

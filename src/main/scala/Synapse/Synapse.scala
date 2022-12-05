@@ -61,12 +61,14 @@ class Synapse extends Component {
   import SynapseCore._
   val spikeBufferAddrWidth = log2Up(AddrMapping.postSpike.size / busByteCount)
   val currentBufferAddrWidth = log2Up(AddrMapping.current.size / busByteCount)
+  def currentWriteBackDelay = 7
+  def weightWriteBackDelay = 6
 
   val io = new Bundle {
     val csr = in(new SynapseCSR)
     val synapseEvent = slave(Stream(new SynapseEvent))
     val synapseData = master(MemReadWrite(64, CacheConfig.wordAddrWidth))
-    val synapseEventDone = master(Event)
+    val synapseEventDone = out Bool()
     val postSpike = master(MemReadPort(Bits(64 bits), spikeBufferAddrWidth))
     val ltpQuery = master(new ExpLutQuery)
     val ltdQuery = master(new ExpLutQuery)
@@ -75,13 +77,23 @@ class Synapse extends Component {
 
   val spikeTimeDiff = new SpikeTimeDiff
 
+  def vAdd(a:Vec[SInt], b:Vec[SInt]): Bits = {
+    a.zip(b).map(z => z._1 +| z._2)
+      .map(_.asBits)
+      .reduce((b0, b1) => b1 ## b0)
+  }
+
+  implicit def bToS(a:Bits): Vec[SInt] = {
+    Vec(a.subdivideIn(16 bits).map(_.asSInt))
+  }
+
   val pipeline = new Pipeline {
     val LEARNING = Stageable(Bool())
     val ADDR_INCR = Stageable(UInt(io.csr.len.getWidth bits))
     val CACHE_ADDR = Stageable(cloneOf(io.synapseEvent.cacheAddr))
     val PRE_SPIKE = Stageable(Bits(16 bits))
 
-    val WEIGHT = Stageable(Vec(SInt(16 bits)))
+    val DELTA_WEIGHT, WEIGHT, CURRENT = Stageable(Bits(64 bits))
 
     val s0 = new Stage {
       valid := io.synapseEvent.valid
@@ -115,24 +127,38 @@ class Synapse extends Component {
     }
 
     val s3 = new Stage(connection = M2S()){
-      //io.ltpQuery.x := spikeTimeDiff.io.ltpDeltaT
-      //io.ltdQuery.x := spikeTimeDiff.io.ltdDeltaT
+      io.ltpQuery.x.zip(spikeTimeDiff.io.ltpDeltaT).foreach(z => z._1.payload := z._2)
+      io.ltdQuery.x.zip(spikeTimeDiff.io.ltdDeltaT).foreach(z => z._1.payload := z._2)
+      io.ltpQuery.x.zip(spikeTimeDiff.io.ltpValid).foreach(z => z._1.valid := z._2)
+      io.ltdQuery.x.zip(spikeTimeDiff.io.ltdValid).foreach(z => z._1.valid := z._2)
     }
 
     val s4 = new Stage(connection = M2S()) {
-      val deltaWeight = io.ltdQuery.y.zip(io.ltpQuery.y)
+      DELTA_WEIGHT := vAdd(io.ltpQuery.y, io.ltdQuery.y)
+      WEIGHT := io.synapseData.read.rsp
+
+      io.current.read.cmd.valid := valid
+      io.current.read.cmd.payload := ADDR_INCR.resized
     }
 
     val s5 = new Stage(connection = M2S()) {
-
+      overloaded(WEIGHT) := vAdd(WEIGHT.asBits, DELTA_WEIGHT.asBits)
     }
 
     val s6 = new Stage(connection = M2S()) {
+      io.synapseData.write.valid := valid
+      io.synapseData.write.data := WEIGHT
+      io.synapseData.write.address := CACHE_ADDR
 
+      CURRENT := vAdd(io.current.read.rsp, WEIGHT.asBits)
     }
 
     val s7 = new Stage(connection = M2S()) {
-
+      io.current.write.valid := valid
+      io.current.write.address := ADDR_INCR.resized
+      io.current.write.data := CURRENT
+      io.synapseEventDone := valid
     }
   }
+  pipeline.build()
 }
