@@ -89,11 +89,6 @@ class SpikeEvent extends Spike {
   def setCacheAllocateFail(): Unit = cacheAddr.setAll()
 }
 
-class SynapseEvent extends SpikeEvent {
-  val preSpike = Bits(SynapseCore.timeWindowWidth bits)
-  val virtual = Bool()
-}
-
 class ExpLutQuery extends Bundle with IMasterSlave {
   val x = Vec(Flow(UInt(log2Up(SynapseCore.timeWindowWidth) bits)), 4)
   val y = Vec(SInt(16 bits), 4)
@@ -112,6 +107,7 @@ class SynapseCore extends Component {
 
   val synapseCtrl = new SynapseCtrl
   val synapse = new Synapse
+  val preSpikeFetch = new PreSpikeFetch
 
   val slaveBusConfig = AddrMapping.pipelineMemoryBusConfig
 
@@ -138,11 +134,14 @@ class SynapseCore extends Component {
   )
 
   synapseCtrl.io.noc <> io.noc
-  synapseCtrl.io.synapseEvent <> synapse.io.synapseEvent
+  synapseCtrl.io.spikeEventDone := synapse.io.synapseEventDone
+  synapseCtrl.io.spikeEvent >> preSpikeFetch.io.spikeEvent
+  preSpikeFetch.io.synapseEvent >> synapse.io.synapseEvent
   synapse.io.synapseData <> cache.io.synapseData
   synapse.io.current <> currentRam.io.mem
   synapse.io.ltdQuery <> ltdLut.io.query
   synapse.io.ltpQuery <> ltpLut.io.query
   postSpikeRam.io.mem.read <> synapse.io.postSpike
   postSpikeRam.io.mem.write.setIdle()
+  preSpikeRam.io.mem <> preSpikeFetch.io.preSpike
 }

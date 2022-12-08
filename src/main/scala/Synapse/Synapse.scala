@@ -10,6 +10,10 @@ class SynapseCSR extends Bundle {
   val learning = Bool()
 }
 
+class SynapseEvent extends SpikeEvent {
+  val preSpike = Bits(SynapseCore.timeWindowWidth bits)
+}
+
 class SpikeTimeDiff extends Component {
   import SynapseCore.timeWindowWidth
   def postSpikeInputDelay = 1
@@ -161,4 +165,16 @@ class Synapse extends Component {
     }
   }
   pipeline.build()
+}
+
+class PreSpikeFetch extends Component {
+  import SynapseCore._
+  val spikeBufferAddrWidth = log2Up(AddrMapping.preSpike.size / busByteCount)
+  val io = new Bundle {
+    val learning = in Bool()
+    val spikeEvent = slave(Stream(new SpikeEvent))
+    val preSpike = master(MemReadWrite(busDataWidth, spikeBufferAddrWidth))
+    val synapseEvent = master(Stream(new SynapseEvent))
+  }
+  stub()
 }
