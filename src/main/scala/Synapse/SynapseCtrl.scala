@@ -31,22 +31,37 @@ class SynapseData extends Bundle {
   }
 }
 
-class DataAccessCmd extends Bundle {
-  val address = UInt()
-  val len = UInt()
+class MemAccessCmd extends Bundle {
+  val address = UInt(pipeLineMemoryBusMasterConfig.addressWidth bits)
+  val len = UInt(8 bits)
   val write = Bool()
-}
-class WeightAccessCmd extends DataAccessCmd {
-  val nid = UInt(SynapseCore.busDataWidth bits)
+  val data = Bits(SynapseCore.busDataWidth bits)
 }
 
-class MissSpikeManager extends Component {
-  val io = new Bundle {
-    val dataIn = slave(Stream(Fragment(new SynapseData)))
-    val dataOut = master(Stream(Fragment(new SynapseData)))
-    val cache = master(PipelinedMemoryBus(SynapseCore.pipeLineMemoryBusMasterConfig))
-    val missSpike = slave(Stream(new SpikeEvent))
-    val inferenceOnly = in Bool()
+case class MemAccessBus() extends Bundle with IMasterSlave {
+  val cmd = Stream(new MemAccessCmd)
+  val rsp = Flow(cloneOf(cmd.data))
+
+  override def asMaster(): Unit = {
+    master(cmd)
+    slave(rsp)
   }
-  stub()
+
+  def toPipeLineMemoryBus: PipelinedMemoryBus ={
+    val that = PipelinedMemoryBus(pipeLineMemoryBusMasterConfig)
+    val addrIncr = Counter(8 bits, cmd.fire)
+    when(addrIncr===cmd.len && addrIncr.willIncrement){
+      addrIncr.clear()
+    }
+
+    that.cmd << cmd.translateWith{
+      val ret = cloneOf(that.cmd)
+      ret.write := cmd.write
+      ret.address := cmd.address + addrIncr
+      ret.data := cmd.data
+      ret.mask := 0xFF
+      ret
+    }
+    that
+  }
 }
