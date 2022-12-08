@@ -29,4 +29,19 @@ object CacheSnnTest {
     val upBound = 1 << 15
     Random.nextInt(upBound * 2) - upBound
   }
+
+  def booleanToInt(b:Boolean) = if(b) 1 else 0
+
+  def quantize(x: Double, q: Int): Int = {
+    val y = math.round(x * (1 << q)).toInt
+    val upBound = (1 << (q + 1)) - 1
+    val lowBound = -upBound - 1
+    if (y >= upBound) {
+      upBound
+    } else if (y <= lowBound) {
+      lowBound
+    } else {
+      y
+    }
+  }
 }

@@ -7,7 +7,10 @@ import spinal.core.sim._
 import spinal.lib.{Flow, MemReadPort}
 import spinal.lib.sim.FlowMonitor
 import spinal.lib.bus.amba4.axi.sim.SparseMemory
+import breeze.linalg._
+import breeze.plot._
 
+import scala.collection.mutable.ListBuffer
 import scala.util.Random
 
 /*
@@ -107,55 +110,51 @@ class SpikeTimeDiffTest extends AnyFunSuite {
   }
 }
 
-class SynapseTest extends AnyFunSuite {
-  val complied = simConfig.compile(new Synapse)
-
-  case class MemSlave(r:MemReadPort[Bits], w:Flow[MemWriteCmd], clockDomain: ClockDomain, readDelay:Int){
+object SynapseTest {
+  // memory sim slaves, use for cache/postSpike/current
+  case class MemSlave(r: MemReadPort[Bits], w: Flow[MemWriteCmd], clockDomain: ClockDomain, readDelay: Int) {
     val mem = SparseMemory()
     val rspQueue = Array.fill(readDelay)(BigInt(0))
     var queuePush = 0
     var queuePop = 1
-    clockDomain.onSamplings{
+    clockDomain.onSamplings {
       queuePush = (queuePush + 1) % readDelay
       queuePop = (queuePop + 1) % readDelay
       r.rsp #= rspQueue(queuePop)
       rspQueue(queuePop) = 0
     }
 
-    FlowMonitor(r.cmd, clockDomain){addr =>
-      rspQueue(queuePush) = mem.readBigInt(addr.toLong<<3, 8)
+    FlowMonitor(r.cmd, clockDomain) { addr =>
+      rspQueue(queuePush) = mem.readBigInt(addr.toLong << 3, 8)
     }
 
-    if(w!=null){
+    if (w != null) {
       FlowMonitor(w, clockDomain) { cmd =>
         mem.writeBigInt(cmd.address.toLong << 3, cmd.data.toBigInt, 8)
       }
     }
   }
 
-  case class ExpLutSim(p:ExpLutQuery, clockDomain: ClockDomain){
+  case class ExpLutSim(p: ExpLutQuery, clockDomain: ClockDomain) {
     val mem = (0 until 16).toArray
-    clockDomain.onSamplings{
+    clockDomain.onSamplings {
       for ((x, y) <- p.x.zip(p.y)) {
-        if(x.valid.toBoolean){
+        if (x.valid.toBoolean) {
           y #= mem(x.payload.toInt)
-        }else{
+        } else {
           y #= 0
         }
       }
     }
-
-    def loadData() = ???
   }
 
-  case class SynapseMemSlaves(cache:MemSlave,
-                              postSpike:MemSlave,
-                              current:MemSlave,
-                              ltpLut:ExpLutSim,
-                              ltdLut:ExpLutSim){
-  }
+  case class SynapseMemSlaves(cache: MemSlave,
+                              postSpike: MemSlave,
+                              current: MemSlave,
+                              ltpLut: ExpLutSim,
+                              ltdLut: ExpLutSim)
 
-  def initDut(dut:Synapse):SynapseMemSlaves = {
+  def initDut(dut: Synapse): SynapseMemSlaves = {
     dut.clockDomain.forkStimulus(2)
     SimTimeout(100000)
     dut.io.synapseEvent.valid #= false
@@ -167,6 +166,18 @@ class SynapseTest extends AnyFunSuite {
     SynapseMemSlaves(cache, postSpike, current, ltpLut, ltdLut)
   }
 
+  def preSpikeUpdate(sHis: Int, s: Int): Int = {
+    ((sHis << 1) & 0xFFFF) | s
+  }
+
+  def postSpikeUpdate(sHis: Int, s: Int): Int = {
+    ((sHis | s) << 1) & 0xFFFF
+  }
+}
+
+class SynapseTest extends AnyFunSuite {
+  val complied = simConfig.compile(new Synapse)
+  import SynapseTest._
   /*
   test pipeline timing
   pre-spike and post-spike trigger ltpT = 14, ltdT = 1,
@@ -213,4 +224,81 @@ class SynapseTest extends AnyFunSuite {
       currentWriteBack.join()
     }
   }
+}
+
+object SynapseLearningPlot extends App{
+  import SynapseTest._
+
+  val q = 13
+  val tauPre = 2.0
+  val tauPost = 2.0
+  val threshold = 1 << 14
+  val step = 400
+  val inSpike = Seq.fill(step)(Random.nextInt(10) >= 7).map(booleanToInt)
+  val outSpike = Seq.fill(step)(Seq.fill(4)(Random.nextInt(10) >= 8).map(booleanToInt))
+  val weightInit = Seq.fill(4)(1<<q)
+  val ltpLutContent = (0 until 16).map(t => 0.01 * math.exp(-t / tauPost)).map(x => quantize(x, q))
+  val ltdLutContent = (0 until 16).map(t => -0.05 * math.exp(-t / tauPre)).map(x => quantize(x, q))
+  val weightChange: ListBuffer[Seq[Int]] = collection.mutable.ListBuffer()
+
+  simConfig.compile(new Synapse).doSim(66) { dut =>
+    val slaves = initDut(dut)
+    slaves.cache.mem.writeBigInt(0, vToRaw(weightInit, 16), 8)
+    slaves.postSpike.mem.writeBigInt(0, 0, 8)
+    slaves.current.mem.writeBigInt(0, 0, 8)
+    for (i <- 0 until 16) {
+      slaves.ltpLut.mem(i) = ltpLutContent(i)
+      slaves.ltdLut.mem(i) = ltdLutContent(i)
+    }
+    dut.io.synapseEvent.valid #= false
+    dut.io.synapseEvent.cacheAddr #= 0
+    dut.io.csr.len #= 0
+    dut.io.csr.learning #= true
+
+    var preSpike = 0
+    for (t <- 0 until step) {
+      // do pre spike triggered stdp
+      preSpike = preSpikeUpdate(preSpike, inSpike(t))
+      dut.io.synapseEvent.valid #= true
+      dut.io.synapseEvent.preSpike #= preSpike
+      dut.clockDomain.waitSamplingWhere(dut.io.synapseEvent.ready.toBoolean)
+      dut.io.synapseEvent.valid #= false
+      dut.clockDomain.waitSamplingWhere(dut.io.synapseEventDone.toBoolean)
+      dut.clockDomain.waitSampling()
+
+      // @deprecate instead by random post spike
+      // do neuron firing
+      /*
+      val current = rawToV(slaves.current.mem.readBigInt(0, 8), 16, 4)
+      val postSpike = current.map(_ >= threshold).map(booleanToInt)
+      val currentRst = current.zip(postSpike).map(z => -(z._2-1) * z._1)
+      slaves.current.mem.writeBigInt(0, vToRaw(currentRst, 16), 8)
+       */
+
+      // update post spike
+      val postSpikeHisOld = rawToV(slaves.postSpike.mem.readBigInt(0, 8), 16, 4)
+      val postSpikeHisNew = postSpikeHisOld.zip(outSpike(t)).map(z => postSpikeUpdate(z._1, z._2))
+      slaves.postSpike.mem.writeBigInt(0, vToRaw(postSpikeHisNew, 16), 8)
+      weightChange.append(rawToV(slaves.cache.mem.readBigInt(0, 8), 16, 4))
+    }
+  }
+
+  def spikeExtend(sSeq:Seq[Int]):Seq[Double] = {
+    sSeq.flatMap(s=>Seq(0, 0, s, 0, 0)).map(_.toDouble)
+  }
+
+  val f = Figure()
+  val x = linspace(0, step, step)
+  val n = 5
+  val xs = linspace(0, step, step*5)
+  val pPre = f.subplot(n, 1, 0)
+  pPre += plot(xs, spikeExtend(inSpike), colorcode = "green")
+  for(i <- 0 until 2){
+    val p = f.subplot(n, 1, (i*2)+1)
+    val w = weightChange.map(_(i).toDouble / math.pow(2, q))
+    p += plot(x, w)
+    val ps = f.subplot(n, 1, i*2 + 2 )
+    ps += plot(xs, spikeExtend(outSpike.map(_(i))), colorcode = "cyan")
+  }
+  f.saveas("lines.png")
 }

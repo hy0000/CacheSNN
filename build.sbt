@@ -8,13 +8,16 @@ val spinalLib = "com.github.spinalhdl" %% "spinalhdl-lib" % spinalVersion
 val spinalIdslPlugin = compilerPlugin("com.github.spinalhdl" %% "spinalhdl-idsl-plugin" % spinalVersion)
 val scalactic = "org.scalactic" %% "scalactic" % "3.2.14"
 val scalatest = "org.scalatest" %% "scalatest" % "3.2.14" % "test"
+val breeze = "org.scalanlp" %% "breeze" % "1.1"
+val breezeViz = "org.scalanlp" %% "breeze-viz" % "1.1"
 
 lazy val root = (project in file("."))
   .settings(
     name := "CacheSNN",
     libraryDependencies ++= Seq(
       spinalCore, spinalLib, spinalIdslPlugin,
-      scalactic, scalatest
+      scalactic, scalatest,
+      breeze, breezeViz
     )
   )
 
