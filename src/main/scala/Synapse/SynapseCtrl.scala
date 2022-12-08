@@ -19,7 +19,7 @@ class SynapseCtrl extends Component {
 }
 
 class SynapseData extends Bundle {
-  val data = Bits(SynapseCore.busDataWidth bits)
+  val data = Fragment(Bits(SynapseCore.busDataWidth bits))
 
   def lenFieldRange = 7 downto 0
   def nidFieldRange = lenFieldRange.high + AER.nidWidth downto lenFieldRange.high + 1
