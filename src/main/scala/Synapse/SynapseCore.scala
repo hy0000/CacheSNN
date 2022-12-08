@@ -84,6 +84,8 @@ class Spike extends Bundle {
 
 class SpikeEvent extends Spike {
   val cacheAddr = UInt(CacheConfig.wordAddrWidth bits)
+  // TODO: if it's needed to add virtual spike, need change PreSpikeFetch logic
+  // val virtual = Bool()
 
   def cacheAllocateFailed: Bool = cacheAddr.andR
   def setCacheAllocateFail(): Unit = cacheAddr.setAll()
