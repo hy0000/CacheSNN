@@ -4,12 +4,13 @@ import CacheSNN.CacheSnnTest._
 import org.scalatest.funsuite.AnyFunSuite
 import spinal.core._
 import spinal.core.sim._
-import spinal.lib.{Flow, MemReadPort}
-import spinal.lib.sim.FlowMonitor
+import spinal.lib._
+import spinal.lib.sim.{FlowMonitor, StreamDriver, StreamMonitor, StreamReadyRandomizer}
 import spinal.lib.bus.amba4.axi.sim.SparseMemory
 import breeze.linalg._
 import breeze.plot._
 
+import scala.collection.mutable
 import scala.collection.mutable.ListBuffer
 import scala.util.Random
 
@@ -228,6 +229,7 @@ class SynapseTest extends AnyFunSuite {
 
 object SynapseLearningPlot extends App{
   import SynapseTest._
+  import scala.math
 
   val q = 13
   val tauPre = 2.0
@@ -301,4 +303,78 @@ object SynapseLearningPlot extends App{
     ps += plot(xs, spikeExtend(outSpike.map(_(i))), colorcode = "cyan")
   }
   f.saveas("lines.png")
+}
+
+class PreSpikeFetchTest extends AnyFunSuite {
+  val nPreSpike = 2048
+  val complied = simConfig.compile(new PreSpikeFetch)
+
+  case class SpikeEventSim(nid:Int,
+                           cacheAddr:Int){
+    def nidAddress: Int = (nid % nPreSpike)<<1
+    def nidLow: Int = nid % nPreSpike
+  }
+
+  def testBench(dut:PreSpikeFetch, spikeEvents:Seq[SpikeEventSim], learning:Boolean): Unit ={
+    import SynapseTest._
+
+    dut.clockDomain.forkStimulus(2)
+    SimTimeout(100000)
+    dut.io.learning #= learning
+    StreamReadyRandomizer(dut.io.synapseEvent, dut.clockDomain)
+
+    val (driver, queue) = StreamDriver.queue(dut.io.spikeEvent, dut.clockDomain)
+    driver.transactionDelay = () => 0
+    spikeEvents.foreach{seSim =>
+      queue.enqueue { se =>
+        se.cacheAddr #= seSim.cacheAddr
+        se.nid #= seSim.nid
+      }
+    }
+
+    // init default pre-spike history
+    val preSpikeMem = MemSlave(dut.io.preSpike.read, dut.io.preSpike.write, dut.clockDomain, 2)
+    for(nid <- 0 until nPreSpike){
+      preSpikeMem.mem.writeBigInt(nid<<1, nid, 2)
+    }
+
+    val preSpikes = if(learning){
+      spikeEvents.map{se =>
+        preSpikeMem.mem.readBigInt(se.nidAddress, 2).toInt | 1
+      }
+    }else{
+      spikeEvents.map(_ => 0)
+    }
+
+    for(i <- spikeEvents.indices){
+      dut.clockDomain.waitSamplingWhere(dut.io.synapseEvent.valid.toBoolean && dut.io.synapseEvent.ready.toBoolean)
+      val e = spikeEvents(i)
+      assert(dut.io.synapseEvent.cacheAddr.toInt == e.cacheAddr)
+      assert(dut.io.synapseEvent.nid.toInt == e.nid)
+      assert(dut.io.synapseEvent.preSpike.toBigInt == preSpikes(i), f"at nid=${e.nid}")
+      if(learning){
+        val updatedSpike = preSpikeMem.mem.readBigInt(e.nidAddress, 2)
+        assert(updatedSpike == (preSpikes(i) | 1))
+      }
+    }
+  }
+
+  def spikeEventGen: Seq[SpikeEventSim] ={
+    val nidBase = randomUIntN(6)<<10
+    Seq.fill(1000)(SpikeEventSim(nidBase + Random.nextInt(1024), randomUIntN(CacheConfig.wordAddrWidth)))
+    //(0 until 1024).map(nid => SpikeEventSim(nid, randomUIntN(CacheConfig.wordAddrWidth)))
+  }
+
+  // test spike event could translate into synapse event
+  test("inference only test"){
+    complied.doSim{ dut =>
+      testBench(dut, spikeEventGen, learning = false)
+    }
+  }
+
+  test("learning test"){
+    complied.doSim { dut =>
+      testBench(dut, spikeEventGen, learning = true)
+    }
+  }
 }

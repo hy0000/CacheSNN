@@ -2,6 +2,7 @@ package Synapse
 
 import spinal.core._
 import spinal.lib._
+import spinal.lib.fsm.{State, StateDelay, StateMachine}
 import spinal.lib.pipeline.Connection.M2S
 import spinal.lib.pipeline._
 
@@ -176,5 +177,65 @@ class PreSpikeFetch extends Component {
     val preSpike = master(MemReadWrite(busDataWidth, spikeBufferAddrWidth))
     val synapseEvent = master(Stream(new SynapseEvent))
   }
-  stub()
+
+  val synapseEvent = cloneOf(io.synapseEvent)
+  io.synapseEvent <-/< synapseEvent
+
+  val fsm = new StateMachine{
+    val spikeRead = makeInstantEntry()
+    val spikeRsp = new StateDelay(2)
+    val spikeSend = new State
+    val spikeUpdate = new State
+
+    io.spikeEvent.ready := False
+    synapseEvent.valid := False
+    io.preSpike.read.cmd.valid := False
+    io.preSpike.write.valid := False
+
+    val rspReg = cloneOf(io.preSpike.read.rsp) setAsReg()
+    val preSpikes = rspReg.subdivideIn(timeWindowWidth bits)
+    val nidLow = io.spikeEvent.nid(1 downto 0).asBits.asUInt
+    val address = io.spikeEvent.nid(10 downto 2)
+    val preSpikesUpdated = Vec(preSpikes.zipWithIndex.map { case (s, i) =>
+      s(s.high downto 1) ## (s.lsb | i===nidLow)
+    })
+    synapseEvent.preSpike := preSpikesUpdated(nidLow)
+    when(!io.learning){
+      synapseEvent.preSpike := 0
+    }
+    synapseEvent.assignUnassignedByName(io.spikeEvent)
+    io.preSpike.write.data := preSpikesUpdated.reduce((a, b) => b ## a)
+    io.preSpike.write.address := address
+    io.preSpike.read.cmd.payload := address
+
+    spikeRead
+      .whenIsActive{
+        when(io.spikeEvent.valid){
+          when(io.learning){
+            io.preSpike.read.cmd.valid := True
+            goto(spikeRsp)
+          }otherwise{
+            goto(spikeSend)
+          }
+        }
+      }
+    spikeRsp
+      .onExit{
+        rspReg := io.preSpike.read.rsp
+      }
+      .whenCompleted(goto(spikeUpdate))
+    spikeUpdate
+      .whenIsActive{
+        io.preSpike.write.valid := True
+        goto(spikeSend)
+      }
+    spikeSend
+      .whenIsActive{
+        synapseEvent.valid := True
+        when(synapseEvent.ready){
+          io.spikeEvent.ready := True
+          goto(spikeRead)
+        }
+      }
+  }
 }

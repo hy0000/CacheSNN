@@ -30,6 +30,11 @@ object CacheSnnTest {
     Random.nextInt(upBound * 2) - upBound
   }
 
+  def randomUIntN(n: Int):Int = {
+    val upBound = 1 << (n - 1)
+    Random.nextInt(upBound)
+  }
+
   def booleanToInt(b:Boolean) = if(b) 1 else 0
 
   def quantize(x: Double, q: Int): Int = {
