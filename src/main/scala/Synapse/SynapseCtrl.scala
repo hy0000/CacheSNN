@@ -57,11 +57,12 @@ case class MemAccessBus() extends Bundle with IMasterSlave {
     that.cmd << cmd.translateWith{
       val ret = cloneOf(that.cmd)
       ret.write := cmd.write
-      ret.address := cmd.address + addrIncr
+      ret.address := cmd.address + (addrIncr @@ U"000")
       ret.data := cmd.data
       ret.mask := 0xFF
       ret
     }
+    rsp << that.rsp.translateWith(that.rsp.data)
     that
   }
 }
