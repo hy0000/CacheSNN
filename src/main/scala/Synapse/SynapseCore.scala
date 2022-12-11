@@ -129,10 +129,9 @@ class SynapseCore extends Component {
   interconnect.addSlave(ltpLut.io.bus, AddrMapping.ltpLut)
   interconnect.addSlave(ltdLut.io.bus, AddrMapping.ltdLut)
 
-  interconnect.addMaster(synapseCtrl.io.cacheBus, Seq(cache.io.bus))
   interconnect.addMaster(
-    synapseCtrl.io.bufferBus,
-    Seq(currentRam.io.bus, preSpikeRam.io.bus, postSpikeRam.io.bus, ltpLut.io.bus, ltdLut.io.bus)
+    synapseCtrl.io.bus,
+    Seq(cache.io.bus, currentRam.io.bus, preSpikeRam.io.bus, postSpikeRam.io.bus, ltpLut.io.bus, ltdLut.io.bus)
   )
 
   synapseCtrl.io.noc <> io.noc
