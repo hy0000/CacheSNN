@@ -66,3 +66,19 @@ case class MemAccessBus() extends Bundle with IMasterSlave {
     that
   }
 }
+
+class SpikeShifter extends Component {
+  val io = new Bundle {
+    val run = slave(Event) // valid start ready done
+    val bus = master(MemAccessBus())
+  }
+  stub()
+}
+
+class SpikeUpdater extends Component {
+  val io = new Bundle {
+    val spike = slave(Stream(new Spike))
+    val bus = master(MemAccessBus())
+  }
+  stub()
+}
