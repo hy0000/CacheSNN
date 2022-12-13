@@ -8,7 +8,6 @@ import spinal.lib.pipeline._
 
 class SynapseCSR extends Bundle {
   val len = UInt(9 bits)
-  val learning = Bool()
 }
 
 class SynapseEvent extends SpikeEvent {
@@ -110,12 +109,12 @@ class Synapse extends Component {
         io.synapseEvent.ready := True
       }
 
-      LEARNING := io.csr.learning
+      LEARNING := io.synapseEvent.learning
       ADDR_INCR := addrIncr.value
       CACHE_ADDR := io.synapseEvent.cacheAddr + addrIncr.value
       PRE_SPIKE := io.synapseEvent.preSpike
 
-      io.postSpike.cmd.valid := io.csr.learning && io.synapseEvent.valid
+      io.postSpike.cmd.valid := io.synapseEvent.learning && io.synapseEvent.valid
       io.postSpike.cmd.payload := addrIncr.value
     }
 

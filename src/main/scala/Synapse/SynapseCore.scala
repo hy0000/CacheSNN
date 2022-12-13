@@ -80,6 +80,7 @@ case class MemReadWrite(dataWidth:Int, addrWidth:Int) extends Bundle with IMaste
 
 class Spike extends Bundle {
   val nid = UInt(AER.nidWidth bits)
+  val learning = Bool()
 }
 
 class SpikeEvent extends Spike {
