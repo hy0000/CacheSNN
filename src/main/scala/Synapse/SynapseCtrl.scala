@@ -1,11 +1,11 @@
 package Synapse
 
-import CacheSNN.{CacheSNN, AER}
+import CacheSNN.{AER, CacheSNN}
 import RingNoC.NocInterfaceLocal
 import Synapse.SynapseCore.pipeLineMemoryBusMasterConfig
 import spinal.core._
 import spinal.lib._
-import spinal.lib.bus.simple.PipelinedMemoryBus
+import spinal.lib.bus.simple.{PipelinedMemoryBus, PipelinedMemoryBusConfig}
 
 class SynapseCtrl extends Component {
   val io = new Bundle {
@@ -39,7 +39,7 @@ class MemAccessCmd extends Bundle {
 
 case class MemAccessBus() extends Bundle with IMasterSlave {
   val cmd = Stream(new MemAccessCmd)
-  val rsp = Flow(cloneOf(cmd.data))
+  val rsp = Flow(Fragment(cloneOf(cmd.data)))
 
   override def asMaster(): Unit = {
     master(cmd)
@@ -47,22 +47,54 @@ case class MemAccessBus() extends Bundle with IMasterSlave {
   }
 
   def toPipeLineMemoryBus: PipelinedMemoryBus ={
-    val that = PipelinedMemoryBus(pipeLineMemoryBusMasterConfig)
-    val addrIncr = Counter(8 bits, cmd.fire)
-    when(addrIncr===cmd.len && addrIncr.willIncrement){
-      addrIncr.clear()
-    }
+    val trans = new MemAccessBusToPipeLineMemoryBus
+    trans.io.input.cmd << cmd
+    trans.io.input.rsp >> rsp
+    trans.io.output
+  }
+}
 
-    that.cmd << cmd.translateWith{
-      val ret = cloneOf(that.cmd)
-      ret.write := cmd.write
-      ret.address := cmd.address + (addrIncr @@ U"000")
-      ret.data := cmd.data
-      ret.mask := 0xFF
-      ret
-    }
-    rsp << that.rsp.translateWith(that.rsp.data)
-    that
+class MemAccessBusToPipeLineMemoryBus extends Component {
+  val io = new Bundle {
+    val input = slave(MemAccessBus())
+    val output = master(PipelinedMemoryBus(pipeLineMemoryBusMasterConfig))
+  }
+  val (cmdForReadRsp, cmd) = StreamFork2(io.input.cmd)
+
+  val cmdS2m = cmd.s2mPipe()
+  val that = cloneOf(io.output)
+  val cmdFire = that.cmd.fire
+  val addrIncr = Counter(cmd.len.getWidth bits, cmdFire)
+  val last = addrIncr === cmd.len
+  val lastFire = last && cmdFire
+  when(lastFire) {
+    addrIncr.clear()
+  }
+  val inReadBurst = cmdS2m.valid && !cmdS2m.write && !last
+  cmdS2m.ready := !inReadBurst && that.cmd.ready
+  that.cmd.valid := cmdS2m.valid
+  that.cmd.write := cmdS2m.write
+  that.cmd.address := cmdS2m.address  + (addrIncr @@ U"000")
+  that.cmd.data := cmdS2m.data
+  that.cmd.mask := 0xFF
+
+  io.output.cmd <-< that.cmd
+  io.output.rsp >> that.rsp
+
+  val readCmdLen = cmdForReadRsp.takeWhen(!cmdForReadRsp.write)
+    .translateWith(cmdForReadRsp.len).queue(4)
+  val rspCnt = Counter(cmd.len.getWidth bits, that.rsp.valid)
+  val lastRsp = readCmdLen.payload===rspCnt
+  val lastRspFire = lastRsp && that.rsp.valid
+  when(lastRspFire){
+    rspCnt.clear()
+  }
+  readCmdLen.haltWhen(!lastRspFire).freeRun()
+  io.input.rsp <-< that.rsp.translateWith {
+    val ret = cloneOf(io.input.rsp.payload)
+    ret.fragment := that.rsp.data
+    ret.last := lastRsp
+    ret
   }
 }
 
