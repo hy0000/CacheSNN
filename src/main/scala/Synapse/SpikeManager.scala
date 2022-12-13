@@ -21,6 +21,7 @@ class SpikeManager extends Component {
     val dataWriteBack = master(Stream(new SynapseData))
     val synapseEventDone = slave(Stream(new Spike))
     val flush = slave(Event)
+    val free = out Bool()
   }
 
   val spikeCacheManager = new SpikeCacheManager
@@ -29,17 +30,9 @@ class SpikeManager extends Component {
   val missQueue = StreamFifo(MissSpike(), 256)
   val readyQueue = StreamFifo(new SpikeEvent, 4)
 
-  val flushLogic = new Area {
-    val inFlush = RegInit(False)
-    inFlush
-      .riseWhen(spikeCacheManager.io.free && io.flush.valid)
-      .fallWhen(spikeCacheManager.io.free && missManager.io.free)
-
-    spikeCacheManager.io.flush := inFlush
-    io.flush.ready := inFlush.fall()
-  }
-
-  io.spike.haltWhen(flushLogic.inFlush) >> spikeCacheManager.io.spikeIn
+  io.flush >> spikeCacheManager.io.flush
+  io.free := spikeCacheManager.io.free && missManager.io.free
+  io.spike >> spikeCacheManager.io.spikeIn
   spikeCacheManager.io.hitSpike >> hitQueue.io.push
   spikeCacheManager.io.missSpike >> missQueue.io.push
   missManager.io.missSpike << missQueue.io.pop
@@ -65,7 +58,7 @@ class SpikeCacheManager extends Component {
     val missSpike = master(Stream(MissSpike()))
     val hitSpike = master(Stream(new SpikeEvent))
     val synapseEventDone = slave(Stream(new Spike))
-    val flush = in Bool()
+    val flush = slave(Event)
     val free = out Bool()
   }
   stub()
