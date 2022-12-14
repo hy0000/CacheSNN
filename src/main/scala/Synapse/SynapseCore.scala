@@ -62,6 +62,7 @@ object CacheConfig {
   val lines = 128
   val ways = 8
   val wordAddrWidth = log2Up(size / 8)
+  val wordOffsetWidth = log2Up(size / lines / 8)
 }
 
 case class MemWriteCmd(dataWidth:Int, addrWidth:Int) extends Bundle {
@@ -84,12 +85,12 @@ class Spike extends Bundle {
 }
 
 class SpikeEvent extends Spike {
-  val cacheAddr = UInt(CacheConfig.wordAddrWidth bits)
+  val cacheLineAddr = UInt(log2Up(CacheConfig.lines) bits)
   // TODO: if it's needed to add virtual spike, need change PreSpikeFetch logic
   // val virtual = Bool()
 
-  def cacheAllocateFailed: Bool = cacheAddr.andR
-  def setCacheAllocateFail(): Unit = cacheAddr.setAll()
+  def cacheAllocateFailed: Bool = cacheLineAddr.andR
+  def setCacheAllocateFail(): Unit = cacheLineAddr.setAll()
 }
 
 class ExpLutQuery extends Bundle with IMasterSlave {

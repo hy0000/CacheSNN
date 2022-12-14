@@ -7,7 +7,7 @@ import spinal.lib.pipeline.Connection.M2S
 import spinal.lib.pipeline._
 
 class SynapseCSR extends Bundle {
-  val len = UInt(9 bits)
+  val len = UInt(CacheConfig.wordOffsetWidth bits)
 }
 
 class SynapseEvent extends SpikeEvent {
@@ -94,7 +94,7 @@ class Synapse extends Component {
   val pipeline = new Pipeline {
     val LEARNING = Stageable(Bool())
     val ADDR_INCR = Stageable(UInt(io.csr.len.getWidth bits))
-    val CACHE_ADDR = Stageable(cloneOf(io.synapseEvent.cacheAddr))
+    val CACHE_ADDR = Stageable(UInt(CacheConfig.wordAddrWidth bits))
     val PRE_SPIKE = Stageable(Bits(16 bits))
 
     val DELTA_WEIGHT, WEIGHT, CURRENT = Stageable(Bits(64 bits))
@@ -102,20 +102,20 @@ class Synapse extends Component {
     val s0 = new Stage {
       valid := io.synapseEvent.valid
       // address bursting and send post spike read cmd
-      val addrIncr = Counter(io.csr.len.getWidth bits, io.synapseEvent.valid)
+      val addrOffset = Counter(io.csr.len.getWidth bits, io.synapseEvent.valid)
       io.synapseEvent.ready := False
-      when(addrIncr.willIncrement && addrIncr.value===io.csr.len){
-        addrIncr.clear()
+      when(addrOffset.willIncrement && addrOffset.value===io.csr.len){
+        addrOffset.clear()
         io.synapseEvent.ready := True
       }
 
       LEARNING := io.synapseEvent.learning
-      ADDR_INCR := addrIncr.value
-      CACHE_ADDR := io.synapseEvent.cacheAddr + addrIncr.value
+      ADDR_INCR := addrOffset.value
+      CACHE_ADDR := io.synapseEvent.cacheLineAddr @@ addrOffset.value
       PRE_SPIKE := io.synapseEvent.preSpike
 
       io.postSpike.cmd.valid := io.synapseEvent.learning && io.synapseEvent.valid
-      io.postSpike.cmd.payload := addrIncr.value
+      io.postSpike.cmd.payload := addrOffset.value.resized
     }
 
     val s1 = new Stage(connection = M2S()) {

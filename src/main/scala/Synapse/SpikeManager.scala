@@ -93,7 +93,7 @@ class SpikeCacheManager extends Component {
 
       io.missSpike << readRsp.translateWith{
         val ret = cloneOf(io.missSpike.payload)
-        ret.cacheAddr := readRsp
+        ret
       }
     }
   }

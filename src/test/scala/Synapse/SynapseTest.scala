@@ -195,8 +195,9 @@ class SynapseTest extends AnyFunSuite {
       val weight = 0x0001000200030004L
       val writeBackWeight = 0x0010001100120013L
       val writeBackCurrent = writeBackWeight + current
-      val cacheAddrBase = 0x100
-      slaves.cache.mem.writeBigInt(cacheAddrBase<<3, weight, 8)
+      val cacheLineAddr = 100
+      val cacheWordAddr = cacheLineAddr<<CacheConfig.wordOffsetWidth
+      slaves.cache.mem.writeBigInt(cacheWordAddr<<3, weight, 8)
       slaves.postSpike.mem.writeBigInt(0, postSpike, 8)
       slaves.current.mem.writeBigInt(0, current, 8)
       dut.io.synapseEvent.learning #= true
@@ -204,14 +205,14 @@ class SynapseTest extends AnyFunSuite {
       fork{
         dut.io.synapseEvent.valid #= true
         dut.io.synapseEvent.preSpike #= preSpike
-        dut.io.synapseEvent.cacheAddr #= cacheAddrBase
+        dut.io.synapseEvent.cacheLineAddr #= cacheLineAddr
         dut.clockDomain.waitSamplingWhere(dut.io.synapseEvent.ready.toBoolean)
         dut.io.synapseEvent.valid #= false
       }
       val cacheWriteBack = fork{
         dut.clockDomain.waitSampling(dut.weightWriteBackDelay + 1)
         assert(dut.io.synapseData.write.valid.toBoolean)
-        assert(dut.io.synapseData.write.address.toLong==cacheAddrBase)
+        assert(dut.io.synapseData.write.address.toLong==cacheWordAddr)
         assert(dut.io.synapseData.write.data.toBigInt==writeBackWeight)
       }
       val currentWriteBack = fork{
@@ -253,7 +254,7 @@ object SynapseLearningPlot extends App{
       slaves.ltdLut.mem(i) = ltdLutContent(i)
     }
     dut.io.synapseEvent.valid #= false
-    dut.io.synapseEvent.cacheAddr #= 0
+    dut.io.synapseEvent.cacheLineAddr #= 0
     dut.io.csr.len #= 0
     dut.io.synapseEvent.learning #= true
 
@@ -310,7 +311,7 @@ class PreSpikeFetchTest extends AnyFunSuite {
   val complied = simConfig.compile(new PreSpikeFetch)
 
   case class SpikeEventSim(nid:Int,
-                           cacheAddr:Int){
+                           cacheLineAddr:Int){
     def nidAddress: Int = (nid % nPreSpike)<<1
     def nidLow: Int = nid % nPreSpike
   }
@@ -327,7 +328,7 @@ class PreSpikeFetchTest extends AnyFunSuite {
     driver.transactionDelay = () => 0
     spikeEvents.foreach{seSim =>
       queue.enqueue { se =>
-        se.cacheAddr #= seSim.cacheAddr
+        se.cacheLineAddr #= seSim.cacheLineAddr
         se.nid #= seSim.nid
       }
     }
@@ -349,7 +350,7 @@ class PreSpikeFetchTest extends AnyFunSuite {
     for(i <- spikeEvents.indices){
       dut.clockDomain.waitSamplingWhere(dut.io.synapseEvent.valid.toBoolean && dut.io.synapseEvent.ready.toBoolean)
       val e = spikeEvents(i)
-      assert(dut.io.synapseEvent.cacheAddr.toInt == e.cacheAddr)
+      assert(dut.io.synapseEvent.cacheLineAddr.toInt == e.cacheLineAddr)
       assert(dut.io.synapseEvent.nid.toInt == e.nid)
       assert(dut.io.synapseEvent.preSpike.toBigInt == preSpikes(i), f"at nid=${e.nid}")
       if(learning){
@@ -361,7 +362,7 @@ class PreSpikeFetchTest extends AnyFunSuite {
 
   def spikeEventGen: Seq[SpikeEventSim] ={
     val nidBase = randomUIntN(6)<<10
-    Seq.fill(1000)(SpikeEventSim(nidBase + Random.nextInt(1024), randomUIntN(CacheConfig.wordAddrWidth)))
+    Seq.fill(1000)(SpikeEventSim(nidBase + Random.nextInt(1024), Random.nextInt(CacheConfig.lines)))
     //(0 until 1024).map(nid => SpikeEventSim(nid, randomUIntN(CacheConfig.wordAddrWidth)))
   }
 
