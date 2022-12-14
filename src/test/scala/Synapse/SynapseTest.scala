@@ -200,7 +200,7 @@ class SynapseTest extends AnyFunSuite {
       slaves.cache.mem.writeBigInt(cacheWordAddr<<3, weight, 8)
       slaves.postSpike.mem.writeBigInt(0, postSpike, 8)
       slaves.current.mem.writeBigInt(0, current, 8)
-      dut.io.synapseEvent.learning #= true
+      dut.io.csr.learning #= true
       dut.io.csr.len #= 0
       fork{
         dut.io.synapseEvent.valid #= true
@@ -256,7 +256,7 @@ object SynapseLearningPlot extends App{
     dut.io.synapseEvent.valid #= false
     dut.io.synapseEvent.cacheLineAddr #= 0
     dut.io.csr.len #= 0
-    dut.io.synapseEvent.learning #= true
+    dut.io.csr.learning #= true
 
     var preSpike = 0
     for (t <- 0 until step) {

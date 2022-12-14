@@ -63,6 +63,13 @@ object CacheConfig {
   val ways = 8
   val wordAddrWidth = log2Up(size / 8)
   val wordOffsetWidth = log2Up(size / lines / 8)
+  val tagTimestampWidth = 2
+}
+
+case class SynapseCsr() extends Bundle {
+  val len = UInt(CacheConfig.wordOffsetWidth bits)
+  val learning = Bool()
+  val timestamp = in UInt(CacheConfig.tagTimestampWidth bits)
 }
 
 case class MemWriteCmd(dataWidth:Int, addrWidth:Int) extends Bundle {
@@ -81,7 +88,6 @@ case class MemReadWrite(dataWidth:Int, addrWidth:Int) extends Bundle with IMaste
 
 class Spike extends Bundle {
   val nid = UInt(AER.nidWidth bits)
-  val learning = Bool()
 }
 
 class SpikeEvent extends Spike {

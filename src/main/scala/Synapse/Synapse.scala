@@ -6,10 +6,6 @@ import spinal.lib.fsm.{State, StateDelay, StateMachine}
 import spinal.lib.pipeline.Connection.M2S
 import spinal.lib.pipeline._
 
-class SynapseCSR extends Bundle {
-  val len = UInt(CacheConfig.wordOffsetWidth bits)
-}
-
 class SynapseEvent extends SpikeEvent {
   val preSpike = Bits(SynapseCore.timeWindowWidth bits)
 }
@@ -69,7 +65,7 @@ class Synapse extends Component {
   def weightWriteBackDelay = 6
 
   val io = new Bundle {
-    val csr = in(new SynapseCSR)
+    val csr = in(SynapseCsr())
     val synapseEvent = slave(Stream(new SynapseEvent))
     val synapseData = master(MemReadWrite(64, CacheConfig.wordAddrWidth))
     val synapseEventDone = out Bool()
@@ -109,12 +105,11 @@ class Synapse extends Component {
         io.synapseEvent.ready := True
       }
 
-      LEARNING := io.synapseEvent.learning
       ADDR_INCR := addrOffset.value
       CACHE_ADDR := io.synapseEvent.cacheLineAddr @@ addrOffset.value
       PRE_SPIKE := io.synapseEvent.preSpike
 
-      io.postSpike.cmd.valid := io.synapseEvent.learning && io.synapseEvent.valid
+      io.postSpike.cmd.valid := io.csr.learning && io.synapseEvent.valid
       io.postSpike.cmd.payload := addrOffset.value.resized
     }
 

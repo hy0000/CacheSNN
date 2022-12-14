@@ -7,6 +7,7 @@ import spinal.lib.fsm._
 
 class SpikeManager extends Component {
   val io = new Bundle {
+    val csr = in(SynapseCsr())
     val spike = slave(Stream(new Spike))
     val spikeEvent = master(Stream(new SpikeEvent))
     val bus = master(MemAccessBus())
@@ -48,11 +49,10 @@ case class MissSpike() extends SpikeEvent {
 class SpikeCacheManager extends Component {
   val setIndexRange = log2Up(CacheConfig.lines / CacheConfig.ways) - 1 downto 0
   val tagWidth = AER.nidWidth - setIndexRange.size
-  val tagTimestampWidth = 2
   val wayCountPerStep = 2
 
   val io = new Bundle {
-    val timestamp = in UInt(tagTimestampWidth bits)
+    val csr = in(SynapseCsr())
     val spikeIn = slave(Stream(new Spike))
     val missSpike = master(Stream(MissSpike()))
     val hitSpike = master(Stream(new SpikeEvent))
@@ -70,7 +70,7 @@ class SpikeCacheManager extends Component {
     val valid = Bool()
     val locked = Bool()
     val tag = UInt(tagWidth bits)
-    val timeStamp = UInt(tagTimestampWidth bits)
+    val timeStamp = UInt(CacheConfig.tagTimestampWidth bits)
   }
 
   // last way of per cache set is use to allocate miss spike if there are not available item to replace
