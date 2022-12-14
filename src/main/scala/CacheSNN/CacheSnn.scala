@@ -2,7 +2,7 @@ package CacheSNN
 
 import Manager.Manager
 import Neuron.NeuronCore
-import RingNoC.{Ring, RingConfig}
+import RingNoC.{NocConfig, Ring}
 import Synapse.SynapseCore
 import spinal.core._
 import spinal.lib._
@@ -10,11 +10,11 @@ import spinal.lib.bus.amba3.apb.{Apb3, Apb3Config}
 import spinal.lib.bus.amba4.axi.{Axi4, Axi4Config}
 
 object CacheSNN {
-  val nocBusWidth = 64
+  val nocConfig = NocConfig(64)
 
   val externalMemoryAxi4Config = Axi4Config(
     addressWidth = 32,
-    dataWidth = nocBusWidth,
+    dataWidth = 64,
     idWidth = 2
   )
   val apbConfig = Apb3Config(32, 64)
@@ -34,8 +34,7 @@ class CacheSNN extends Component {
   val neuronCore = new NeuronCore
   val manager = new Manager
 
-  val ringRouterConfig = RingConfig(CacheSNN.nocBusWidth)
-  val ringBus = Ring(ringRouterConfig)
+  val ringBus = Ring(CacheSNN.nocConfig)
 
   val synapseCoreMapping = synapseCores.map(_.io.noc).zip(Seq(0, 1, 4, 5))
   ringBus.addNodes(synapseCoreMapping:_*)

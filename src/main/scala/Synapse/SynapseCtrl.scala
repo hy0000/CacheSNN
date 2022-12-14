@@ -9,7 +9,7 @@ import spinal.lib.bus.simple.{PipelinedMemoryBus, PipelinedMemoryBusConfig}
 
 class SynapseCtrl extends Component {
   val io = new Bundle {
-    val noc = slave(NocInterfaceLocal(CacheSNN.nocBusWidth))
+    val noc = slave(NocInterfaceLocal(CacheSNN.nocConfig))
     val bus = master(PipelinedMemoryBus(pipeLineMemoryBusMasterConfig))
     val spikeEvent = master(Stream(new SpikeEvent))
     val spikeEventDone = in Bool()

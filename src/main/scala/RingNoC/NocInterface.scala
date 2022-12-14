@@ -3,19 +3,25 @@ package RingNoC
 import spinal.core._
 import spinal.lib._
 
+case class NocConfig(dataWidth:Int)
+
 object NocInterface {
-  def apply(dataWidth: Int) = Stream(Fragment(Bits(dataWidth bits)))
+  def apply(c:NocConfig) = Stream(Fragment(Bits(c.dataWidth bits)))
 }
 
 object NocInterfaceLocal{
-  def apply(dataWidth: Int) = new NocInterfaceLocal(dataWidth)
+  def apply(c:NocConfig) = new NocInterfaceLocal(c)
 }
 
-class NocInterfaceLocal(dataWidth:Int) extends Bundle with IMasterSlave {
-  val send, rec = NocInterface(dataWidth)
+class NocInterfaceLocal(c:NocConfig) extends Bundle with IMasterSlave {
+  val send, rec = NocInterface(c)
 
   override def asMaster(): Unit = {
     master(send)
     slave(rec)
+  }
+
+  def setHead(dest:UInt, data:Bits): Unit ={
+    send.fragment := dest.resized(4) ## data.resized(c.dataWidth - 4)
   }
 }

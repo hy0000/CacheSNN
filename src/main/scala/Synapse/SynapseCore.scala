@@ -112,7 +112,7 @@ class SynapseCore extends Component {
   import SynapseCore.AddrMapping
 
   val io = new Bundle {
-    val noc = slave(NocInterfaceLocal(CacheSNN.nocBusWidth))
+    val noc = slave(NocInterfaceLocal(CacheSNN.nocConfig))
   }
 
   val synapseCtrl = new SynapseCtrl
