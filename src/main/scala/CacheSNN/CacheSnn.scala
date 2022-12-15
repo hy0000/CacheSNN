@@ -2,7 +2,7 @@ package CacheSNN
 
 import Manager.Manager
 import Neuron.NeuronCore
-import RingNoC.{NocConfig, Ring}
+import RingNoC.{NocConfig, NocInterfaceLocal, Ring}
 import Synapse.SynapseCore
 import spinal.core._
 import spinal.lib._

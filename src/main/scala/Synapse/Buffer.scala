@@ -1,5 +1,6 @@
 package Synapse
 
+import Util.MemReadWrite
 import spinal.core._
 import spinal.lib._
 import spinal.lib.bus.simple._

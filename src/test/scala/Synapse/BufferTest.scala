@@ -1,5 +1,6 @@
 package Synapse
 
+import Util.MemReadWrite
 import CacheSNN.CacheSnnTest._
 import org.scalatest.funsuite.AnyFunSuite
 import spinal.core.sim._

@@ -1,16 +1,16 @@
 package Synapse
 
 import CacheSNN.CacheSnnTest._
+import Util.MemWriteCmd
+import breeze.linalg._
+import breeze.plot._
 import org.scalatest.funsuite.AnyFunSuite
 import spinal.core._
 import spinal.core.sim._
 import spinal.lib._
-import spinal.lib.sim.{FlowMonitor, StreamDriver, StreamMonitor, StreamReadyRandomizer}
 import spinal.lib.bus.amba4.axi.sim.SparseMemory
-import breeze.linalg._
-import breeze.plot._
+import spinal.lib.sim.{FlowMonitor, StreamDriver, StreamReadyRandomizer}
 
-import scala.collection.mutable
 import scala.collection.mutable.ListBuffer
 import scala.util.Random
 
@@ -230,6 +230,7 @@ class SynapseTest extends AnyFunSuite {
 
 object SynapseLearningPlot extends App{
   import SynapseTest._
+
   import scala.math
 
   val q = 13
