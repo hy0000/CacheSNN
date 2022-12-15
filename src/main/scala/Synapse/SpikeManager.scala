@@ -1,6 +1,7 @@
 package Synapse
 
 import CacheSNN.AER
+import Util.MemAccessBus
 import spinal.core._
 import spinal.lib._
 import spinal.lib.fsm._
@@ -10,7 +11,7 @@ class SpikeManager extends Component {
     val csr = in(SynapseCsr())
     val spike = slave(Stream(new Spike))
     val spikeEvent = master(Stream(new SpikeEvent))
-    val bus = master(MemAccessBus())
+    val bus = master(MemAccessBus(SynapseCore.memAccessBusConfig))
     val dataFill = master(Stream(new SynapseData))
     val dataWriteBack = master(Stream(new SynapseData))
     val synapseEventDone = slave(Stream(new Spike))
@@ -110,7 +111,7 @@ class MissSpikeManager extends Component {
   val io = new Bundle {
     val dataIn = slave(Stream(new SynapseData))
     val dataOut = master(Stream(new SynapseData)) // data out will keep ready until a full trans done
-    val bus = master(MemAccessBus())
+    val bus = master(MemAccessBus(SynapseCore.memAccessBusConfig))
     val missSpike = slave(Stream(MissSpike()))
     val readySpike = master(Stream(new SpikeEvent))
     val free = out Bool()

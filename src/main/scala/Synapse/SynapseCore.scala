@@ -1,7 +1,8 @@
 package Synapse
 
-import CacheSNN.{CacheSNN, AER}
+import CacheSNN.{AER, CacheSNN}
 import RingNoC.NocInterfaceLocal
+import Util.MemAccessBusConfig
 import spinal.core._
 import spinal.lib._
 import spinal.lib.bus.misc.SizeMapping
@@ -53,6 +54,10 @@ object SynapseCore {
 
   val pipeLineMemoryBusMasterConfig = PipelinedMemoryBusConfig(
     addressWidth = log2Up(AddrMapping.cache.size) + 1,
+    dataWidth = busDataWidth
+  )
+  val memAccessBusConfig = MemAccessBusConfig(
+    addrWidth = log2Up(AddrMapping.cache.size) + 1,
     dataWidth = busDataWidth
   )
 }
