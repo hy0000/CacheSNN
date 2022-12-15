@@ -32,10 +32,10 @@ class CacheSNN extends Component {
 
   val ringBus = Ring(CacheSNN.nocConfig)
 
-  val synapseCoreMapping = synapseCores.map(_.io.noc).zip(Seq(0, 1, 4, 5))
+  val synapseCoreMapping = synapseCores.map(_.interface.noc).zip(Seq(0, 1, 4, 5))
   ringBus.addNodes(synapseCoreMapping:_*)
-  ringBus.addNode(neuronCore.io.noc, 2)
-  ringBus.addNode(manager.io.noc, 3)
+  ringBus.addNode(neuronCore.interface.noc, 2)
+  ringBus.addNode(manager.interface.noc, 3)
 
   manager.io.ctrl <> io.ctrl
   manager.io.externalMemory <> io.externalMemory

@@ -5,6 +5,7 @@ import Util.{MemAccessBus, MemAccessBusConfig}
 import spinal.core._
 import spinal.lib._
 import spinal.lib.bus.bram.{BRAM, BRAMConfig, BRAMSlaveFactory}
+import spinal.lib.bus.simple.{PipelinedMemoryBus, PipelinedMemoryBusSlaveFactory}
 
 /**
  *NoC package format
@@ -77,14 +78,10 @@ class AerPackage extends Bundle with IMasterSlave {
 abstract class NocCore extends Component {
   val interface = new Bundle {
     val noc = slave(NocInterfaceLocal(CacheSNN.nocConfig))
+    val reg = slave(BRAM(BRAMConfig(32, 8)))
     val data = slave(MemAccessBus(MemAccessBusConfig(64, 32)))
     val rawSend = master(cloneOf(noc.send))
     val aerS = slave(AER())
     val aerM = master(AER())
   }
-
-  val regBus = BRAM(BRAMConfig(32, 8))
-  val regSlaveFactory = BRAMSlaveFactory(regBus)
-
-  stub()
 }

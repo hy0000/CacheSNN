@@ -1,6 +1,6 @@
 package Synapse
 
-import CacheSNN.{AER, CacheSNN}
+import CacheSNN.{AER, CacheSNN, NocCore}
 import RingNoC.NocInterfaceLocal
 import Util.MemAccessBusConfig
 import spinal.core._
@@ -99,7 +99,7 @@ class ExpLutQuery extends Bundle with IMasterSlave {
   }
 }
 
-class SynapseCore extends Component {
+class SynapseCore extends NocCore {
   import SynapseCore.AddrMapping
 
   val io = new Bundle {
