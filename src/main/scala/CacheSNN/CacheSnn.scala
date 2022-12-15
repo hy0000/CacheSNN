@@ -2,7 +2,7 @@ package CacheSNN
 
 import Manager.Manager
 import Neuron.NeuronCore
-import RingNoC.{NocConfig, NocInterfaceLocal, Ring}
+import RingNoC.{NocConfig, Ring}
 import Synapse.SynapseCore
 import spinal.core._
 import spinal.lib._
@@ -18,10 +18,6 @@ object CacheSNN {
     idWidth = 2
   )
   val apbConfig = Apb3Config(32, 64)
-}
-
-object AER {
-  val nidWidth = 16
 }
 
 class CacheSNN extends Component {
