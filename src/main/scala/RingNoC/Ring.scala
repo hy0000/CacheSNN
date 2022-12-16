@@ -6,17 +6,15 @@ import spinal.lib._
 import scala.collection.mutable
 
 class RingRouter(routerConfig: RouterConfig) extends Component {
-  import routerConfig.nocConfig
-
   val io = new Bundle {
-    val local = master(NocInterfaceLocal(nocConfig))
-    val leftIn, rightIn = slave(NocInterface(nocConfig))
-    val leftOut, rightOut = master(NocInterface(nocConfig))
+    val local = master(NocInterfaceLocal())
+    val leftIn, rightIn = slave(NocInterface())
+    val leftOut, rightOut = master(NocInterface())
   }
   stub()
 }
 
-case class Ring(nocConfig: NocConfig){
+case class Ring(){
 
   val nodes = mutable.LinkedHashMap[Int, NocInterfaceLocal]()
 
@@ -30,10 +28,7 @@ case class Ring(nocConfig: NocConfig){
 
   def build(): Unit ={
     val routers = (0 until nodes.size).map{coordinate =>
-      val config = RouterConfig(
-        nocConfig = nocConfig,
-        coordinate = coordinate
-      )
+      val config = RouterConfig(coordinate)
       val router = new RingRouter(config).setDefinitionName(s"ringRouter_$coordinate")
       router.io.local <> nodes(coordinate)
       router

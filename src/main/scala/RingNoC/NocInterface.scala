@@ -3,25 +3,35 @@ package RingNoC
 import spinal.core._
 import spinal.lib._
 
-case class NocConfig(dataWidth:Int)
+class NocInterface extends Bundle {
+  val flit = Bits(64 bits)
+
+  def setHead(dest: UInt, src: UInt, custom: Bits): Unit = {
+    flit := Seq(
+      dest.resized(4), B(0, 4 bits),
+      src.resized(4), B(0, 4 bits),
+      custom.resized(48)
+    ).reduce(_ ## _).asBits
+  }
+
+  def dest: UInt = flit(63 downto 60).asUInt
+  def src: UInt = flit(55 downto 52).asUInt
+  def custom: Bits = flit(47 downto 0)
+}
 
 object NocInterface {
-  def apply(c:NocConfig) = Stream(Fragment(Bits(c.dataWidth bits)))
+  def apply() = Stream(Fragment(new NocInterface))
 }
 
 object NocInterfaceLocal{
-  def apply(c:NocConfig) = new NocInterfaceLocal(c)
+  def apply() = new NocInterfaceLocal()
 }
 
-class NocInterfaceLocal(c:NocConfig) extends Bundle with IMasterSlave {
-  val send, rec = NocInterface(c)
+class NocInterfaceLocal extends Bundle with IMasterSlave {
+  val send, rec = NocInterface()
 
   override def asMaster(): Unit = {
     master(send)
     slave(rec)
-  }
-
-  def setHead(dest:UInt, data:Bits): Unit ={
-    send.fragment := dest.resized(4) ## data.resized(c.dataWidth - 4)
   }
 }

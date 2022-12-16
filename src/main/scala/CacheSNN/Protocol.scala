@@ -81,7 +81,7 @@ class NocReadRsp extends Bundle {
 
 abstract class NocCore extends Component {
   val interface = new Bundle {
-    val noc = slave(NocInterfaceLocal(CacheSNN.nocConfig))
+    val noc = slave(NocInterfaceLocal())
     // as slave
     val reg = slave(BRAM(BRAMConfig(32, 8)))
     val data = slave(MemAccessBus(MemAccessBusConfig(64, 32)))
