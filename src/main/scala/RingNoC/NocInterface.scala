@@ -30,16 +30,19 @@ class NocPackageHead extends Bundle {
   val custom = Bits(48 bits)
 }
 
-class NocPackage extends Bundle with IMasterSlave {
+abstract class PackageBase[T<:Data] extends Bundle with IMasterSlave {
   // behaviour is like the axi aw/w channel
   // body should not fire earlier than head
-  val head = Stream(new NocPackageHead)
+  val head:Stream[T]
   val body = Stream(Fragment(Bits(64 bits)))
 
   override def asMaster(): Unit = {
-    master(head)
-    slave(body)
+    master(head, body)
   }
+}
+
+class NocPackage extends PackageBase[NocPackageHead] {
+  val head = Stream(new NocPackageHead)
 }
 
 object NocInterfaceLocal{

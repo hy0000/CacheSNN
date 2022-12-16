@@ -1,35 +1,37 @@
 package CacheSNN
 
-import RingNoC.NocInterfaceLocal
+import RingNoC.{NocInterfaceLocal, NocPackageHead, PackageBase}
 import Util.{MemAccessBus, MemAccessBusConfig}
 import spinal.core._
 import spinal.lib._
-import spinal.lib.bus.bram.{BRAM, BRAMConfig, BRAMSlaveFactory}
-import spinal.lib.bus.simple.{PipelinedMemoryBus, PipelinedMemoryBusSlaveFactory}
+import spinal.lib.bus.bram.{BRAM, BRAMConfig}
+
+import scala.language.implicitConversions
+
 
 /**
  *NoC package format
- *|----------------------- 64b head ------------------------------|- 64b body -|
- *|---- noc protocol ----|------------- custom -------------------|
- *| 4b   | 4b | 4b  | 4b | 48b                                    |   -        |
- *| dest | 0  | src | 0  | —                                      |            |
+ *|-------------------------- 64b head ---------------------------------|- 64b body -|
+ *|---- noc protocol ----|---------------- custom ----------------------|
+ *| 4b   | 4b | 4b  | 4b | 48b                                          |   -        |
+ *| dest | 0  | src | 0  | —                                            |            |
  *
- *                       |------------ sys protocol --------------|
- *                       | 3b    | 1b  | 8b   | 4b    | 32b       |
- *                       | R_CMD | w   | addr | id    | data      |   -        |
- *                       | R_RSP | 0          | id    | data      |   -        |
- *                       | D_CMD | w   | len  | id    | addr      |   data     |
- *                       | D_RSP | 0   | len  | id    | 0         |   data     |
- *                       | AER   | 0   | len  | -                 |   —        |
+ *                       |--------------- base protocol ----------------|
+ *                       | 3b    | 1b  | 8b   | 4b  | 32b               |
+ *                       | R_CMD | w   | addr | id  | data              |   -        |
+ *                       | R_RSP | 0          | id  | data              |   -        |
+ *                       | D_CMD | w   | len  | id  | addr              |   data     |
+ *                       | D_RSP | 0          | id  | 0                 |   data     |
+ *                       | AER   | 0   | len  | id  |                   |   —        |
  *
- *                                            |--- AER protocol --|
- *                                            | 4b    | 16b | 16b |
- *                                            | pre   | 0   | nid |   nid mask |
- *                                            | post  | 0   | nid |   nid mask |
- *                                            | curr  | 0   | nid |   data     |
- *                                            | W_R/W | 0   | nid |   data     |
+ *                                                  |--- AER protocol --|
+ *                                                  | 4b    | 12b | 16b |
+ *                                                  | pre   | 0   | nid |   nid mask |
+ *                                                  | post  | 0   | nid |   nid mask |
+ *                                                  | curr  | 0   | nid |   data     |
+ *                                                  | W_R/W | 0   | nid |   data     |
  **/
-object PACKAGE_TYPE extends SpinalEnum {
+object PackageType extends SpinalEnum {
   val R_CMD = newElement("reg-cmd")
   val R_RSP = newElement("reg-rsp")
   val D_CMD = newElement("data-cmd")
@@ -48,8 +50,6 @@ object PACKAGE_TYPE extends SpinalEnum {
 object AER {
   val nidWidth = 16
 
-  def apply() = new AerPackage
-
   object TYPE extends SpinalEnum {
     val W_READ = newElement("weight-read")
     val W_WRITE = newElement("weight-write")
@@ -67,32 +67,76 @@ object AER {
   }
 }
 
-class AerPackage extends Bundle with IMasterSlave {
-  val flit = Stream(Fragment(Bits(64 bits)))
+class BasePackageHead extends NocPackageHead {
+  def pType: PackageType.C = custom(47 downto 45).asInstanceOf[PackageType.C]
 
-  override def asMaster() = {
-    master(flit)
+  def write: Bool = custom(44)
+
+  def len: UInt = custom(43 downto 36).asUInt
+
+  def rAddr: UInt = custom(43 downto 36).asUInt
+
+  def id: UInt = custom(35 downto 32).asUInt
+
+  def rData: Bits = custom(31 downto 0)
+
+  def dAddr: UInt = custom(31 downto 0).asUInt
+
+  def setCustom(pt: PackageType.C, field1b: Bool, field8b: UInt, id: UInt, field32b: Bits): Unit = {
+    custom := pt.asBits.resized(3) ## field1b ## field8b.resized(8) ## id.resized(4) ## field32b.resized(32)
+  }
+
+  def setRegCmd(write: Bool, addr: UInt, id: UInt, data: Bits): Unit = {
+    setCustom(PackageType.R_CMD, write, addr, id, data)
+  }
+
+  def setRegRsp(id: UInt, data: Bits): Unit = {
+    setCustom(PackageType.R_RSP, False, U(0), id, data)
+  }
+
+  def setDataCmd(write: Bool, len: UInt, id: UInt, addr: UInt): Unit = {
+    setCustom(PackageType.D_CMD, write, len, id, addr.asBits)
+  }
+
+  def setDataRsp(id: UInt, data: Bits): Unit = {
+    setCustom(PackageType.D_RSP, False, U(0), id, data)
+  }
+
+  def setAer(len: UInt, id: UInt, aerType: AER.TYPE.C, nid: UInt): Unit = {
+    val aerField = aerType.asBits.resized(4) ## B(0, 12 bits) ## nid
+    setCustom(PackageType.AER, False, len, id, aerField)
   }
 }
 
-class NocReadRsp extends Bundle {
-  val data = Bits(64 bits)
+class BasePackage extends PackageBase[BasePackageHead] {
+  val head = Stream(new BasePackageHead)
+}
+
+class AerPackageHead extends Bundle {
+  val eventType: AER.TYPE.C = AER.TYPE()
+  val nid = UInt(16 bits)
+}
+
+class AerPackage extends PackageBase[AerPackageHead] {
+  val head = Stream(new AerPackageHead)
 }
 
 abstract class NocCore extends Component {
+  val noc = slave(NocInterfaceLocal())
+
   val interface = new Bundle {
-    val noc = slave(NocInterfaceLocal())
-    // as slave
-    val reg = slave(BRAM(BRAMConfig(32, 8)))
-    val data = slave(MemAccessBus(MemAccessBusConfig(64, 32)))
-    val aerS = slave(AER())
-    // as master
-    val rawSend = master(cloneOf(noc.send))
-    val aerM = master(AER())
-    val readRsp = slave
+    val regBus = slave(BRAM(BRAMConfig(32, 8)))
+    val dataBus = slave(MemAccessBus(MemAccessBusConfig(64, 32)))
+    val aerRaw = slave(new AerPackage)
+    val pSend = master(new BasePackage)
   }
 
-  val nocDecode = new Area {
+  val nocUnpack = new Area {
+    val rsp = new BasePackage
+
+  }
+
+  val nocPack = new Area {
 
   }
 }
