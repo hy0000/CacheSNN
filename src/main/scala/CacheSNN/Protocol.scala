@@ -75,13 +75,24 @@ class AerPackage extends Bundle with IMasterSlave {
   }
 }
 
+class NocReadRsp extends Bundle {
+  val data = Bits(64 bits)
+}
+
 abstract class NocCore extends Component {
   val interface = new Bundle {
     val noc = slave(NocInterfaceLocal(CacheSNN.nocConfig))
+    // as slave
     val reg = slave(BRAM(BRAMConfig(32, 8)))
     val data = slave(MemAccessBus(MemAccessBusConfig(64, 32)))
-    val rawSend = master(cloneOf(noc.send))
     val aerS = slave(AER())
+    // as master
+    val rawSend = master(cloneOf(noc.send))
     val aerM = master(AER())
+    val readRsp = slave
+  }
+
+  val nocDecode = new Area {
+
   }
 }
