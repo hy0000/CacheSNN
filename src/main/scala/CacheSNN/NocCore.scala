@@ -9,7 +9,7 @@ import spinal.lib.bus.bram.{BRAM, BRAMConfig}
 /**
  * All cores in this system extends from NocCore class
  *
- * NocCore provides package decode logic which can:
+ * NocCore provides packet decode logic which can:
  *  - access registers/memory automatically
  *  - transfer raw packet to AER event
  *  - handle sent packets order by id

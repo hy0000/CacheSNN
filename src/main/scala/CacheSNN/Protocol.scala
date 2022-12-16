@@ -4,7 +4,7 @@ import spinal.core._
 import spinal.lib._
 
 /**
- *NoC package format
+ *NoC packet format
  *|-------------------------- 64b head ---------------------------------|- 64b body -|
  *|---- noc protocol ----|---------------- custom ----------------------|
  *| 4b   | 4b | 4b  | 4b | 48b                                          |   -        |
@@ -63,18 +63,18 @@ object AER {
 
 class BasePackageHead extends Bundle {
   val dest = UInt(4 bits)
-  val packageType: PackageType.C = PackageType()
+  val packetType: PackageType.C = PackageType()
   val field0 = Bool()
   val field1 = Bits(8 bits)
   val id = UInt(4 bits)
   val field2 = Bits(32 bits)
 
   def toNocCustomField: Bits = {
-    packageType.asBits.resized(3) ## field0 ## field1 ## id ## field2
+    packetType.asBits.resized(3) ## field0 ## field1 ## id ## field2
   }
 
   def assignFromNocCustomField(b:Bits): Unit ={
-    packageType := b(47 downto 45).asInstanceOf[PackageType.C]
+    packetType := b(47 downto 45).asInstanceOf[PackageType.C]
     field0 := b(44)
     field2 := b(43 downto 36)
     id := b(35 downto 32).asUInt
