@@ -67,48 +67,6 @@ object AER {
     )
   }
 }
-/*
-class BasePackageHead extends NocPackageHead {
-  def pType: PackageType.C = custom(47 downto 45).asInstanceOf[PackageType.C]
-
-  def write: Bool = custom(44)
-
-  def len: UInt = custom(43 downto 36).asUInt
-
-  def rAddr: UInt = custom(43 downto 36).asUInt
-
-  def id: UInt = custom(35 downto 32).asUInt
-
-  def rData: Bits = custom(31 downto 0)
-
-  def dAddr: UInt = custom(31 downto 0).asUInt
-
-  def setCustom(pt: PackageType.C, field1b: Bool, field8b: UInt, id: UInt, field32b: Bits): Unit = {
-    custom := pt.asBits.resized(3) ## field1b ## field8b.resized(8) ## id.resized(4) ## field32b.resized(32)
-  }
-
-  def setRegCmd(write: Bool, addr: UInt, id: UInt, data: Bits): Unit = {
-    setCustom(PackageType.R_CMD, write, addr, id, data)
-  }
-
-  def setRegRsp(id: UInt, data: Bits): Unit = {
-    setCustom(PackageType.R_RSP, False, U(0), id, data)
-  }
-
-  def setDataCmd(write: Bool, len: UInt, id: UInt, addr: UInt): Unit = {
-    setCustom(PackageType.D_CMD, write, len, id, addr.asBits)
-  }
-
-  def setDataRsp(id: UInt, data: Bits): Unit = {
-    setCustom(PackageType.D_RSP, False, U(0), id, data)
-  }
-
-  def setAer(len: UInt, id: UInt, aerType: AER.TYPE.C, nid: UInt): Unit = {
-    val aerField = aerType.asBits.resized(4) ## B(0, 12 bits) ## nid
-    setCustom(PackageType.AER, False, len, id, aerField)
-  }
-}
- */
 
 class BasePackageHead extends Bundle {
   val dest = UInt(4 bits)
@@ -119,7 +77,7 @@ class BasePackageHead extends Bundle {
   val field2 = Bits(32 bits)
 
   def toNocCustomField: Bits = {
-    packageType.asBits.resized(4) ## field0 ## field1 ## id ## field2
+    packageType.asBits.resized(3) ## field0 ## field1 ## id ## field2
   }
 
   def assignFromNocCustomField(b:Bits): Unit ={
@@ -149,6 +107,15 @@ class BasePackage extends PackageBase[BasePackageHead] {
 class AerPackageHead extends Bundle {
   val eventType: AER.TYPE.C = AER.TYPE()
   val nid = UInt(16 bits)
+
+  def toAerCustomField: Bits = {
+    eventType.asBits.resized(4) ## B(0, 12 bits) ## nid
+  }
+
+  def assignFromAerCustomField(b: Bits): Unit = {
+    eventType := b(31 downto 28).asInstanceOf[AER.TYPE.C]
+    nid := b(15 downto 0).asUInt
+  }
 }
 
 class AerPackage extends PackageBase[AerPackageHead] {
@@ -184,9 +151,9 @@ abstract class NocCore extends Component {
 class NocUnPacker extends Component {
   val io = new Bundle {
     val nocRec = slave(NocInterface())
-    val regBus = slave(BRAM(BRAMConfig(32, 8)))
-    val dataBus = slave(MemAccessBus(MemAccessBusConfig(64, 32)))
-    val aer = slave(new AerPackage)
+    val regBus = master(BRAM(BRAMConfig(32, 8)))
+    val dataBus = master(MemAccessBus(MemAccessBusConfig(64, 32)))
+    val aer = master(new AerPackage)
     val rspRecId = master(Stream(UInt(4 bits)))
     val rspSend = master(NocInterface())
   }
