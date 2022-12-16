@@ -1,10 +1,11 @@
 package CacheSNN
 
-import RingNoC.{NocInterfaceLocal, NocPackageHead, PackageBase}
+import RingNoC.{NocInterface, NocInterfaceLocal}
 import Util.{MemAccessBus, MemAccessBusConfig}
 import spinal.core._
 import spinal.lib._
 import spinal.lib.bus.bram.{BRAM, BRAMConfig}
+import spinal.lib.fsm._
 
 import scala.language.implicitConversions
 
@@ -66,7 +67,7 @@ object AER {
     )
   }
 }
-
+/*
 class BasePackageHead extends NocPackageHead {
   def pType: PackageType.C = custom(47 downto 45).asInstanceOf[PackageType.C]
 
@@ -107,6 +108,39 @@ class BasePackageHead extends NocPackageHead {
     setCustom(PackageType.AER, False, len, id, aerField)
   }
 }
+ */
+
+class BasePackageHead extends Bundle {
+  val dest = UInt(4 bits)
+  val packageType: PackageType.C = PackageType()
+  val field0 = Bool()
+  val field1 = Bits(8 bits)
+  val id = UInt(4 bits)
+  val field2 = Bits(32 bits)
+
+  def toNocCustomField: Bits = {
+    packageType.asBits.resized(4) ## field0 ## field1 ## id ## field2
+  }
+
+  def assignFromNocCustomField(b:Bits): Unit ={
+    packageType := b(47 downto 45).asInstanceOf[PackageType.C]
+    field0 := b(44)
+    field2 := b(43 downto 36)
+    id := b(35 downto 32).asUInt
+    field2 := b(31 downto 0)
+  }
+}
+
+abstract class PackageBase[T<:Data] extends Bundle with IMasterSlave {
+  // behaviour is like the axi aw/w channel
+  // body should not fire earlier than head
+  val head:Stream[T]
+  val body = Stream(Fragment(Bits(64 bits)))
+
+  override def asMaster(): Unit = {
+    master(head, body)
+  }
+}
 
 class BasePackage extends PackageBase[BasePackageHead] {
   val head = Stream(new BasePackageHead)
@@ -122,21 +156,49 @@ class AerPackage extends PackageBase[AerPackageHead] {
 }
 
 abstract class NocCore extends Component {
-  val noc = slave(NocInterfaceLocal())
+  val noc = master(NocInterfaceLocal())
 
   val interface = new Bundle {
+    val regBus = master(BRAM(BRAMConfig(32, 8))) // for reg ctrl
+    val dataBus = master(MemAccessBus(MemAccessBusConfig(64, 32))) // as memory slave for accessing
+    val aer = master(new AerPackage) // decoded aer data
+    val localSend = slave(new BasePackage) // for user logic to send raw packet
+  }
+
+  val nocUnPacker = new NocUnPacker
+  val nocPacker = new NocPacker
+
+  nocUnPacker.io.nocRec << noc.rec
+  nocUnPacker.io.regBus <> interface.regBus
+  nocUnPacker.io.dataBus <> interface.dataBus
+  nocUnPacker.io.aer <> interface.aer
+
+  nocPacker.io.rspRecId << nocUnPacker.io.rspRecId
+  nocPacker.io.localSend <> interface.localSend
+
+  noc.send << StreamArbiterFactory.fragmentLock.lowerFirst.on(
+    Seq(nocUnPacker.io.rspSend, nocPacker.io.send)
+  )
+}
+
+class NocUnPacker extends Component {
+  val io = new Bundle {
+    val nocRec = slave(NocInterface())
     val regBus = slave(BRAM(BRAMConfig(32, 8)))
     val dataBus = slave(MemAccessBus(MemAccessBusConfig(64, 32)))
-    val aerRaw = slave(new AerPackage)
-    val pSend = master(new BasePackage)
+    val aer = slave(new AerPackage)
+    val rspRecId = master(Stream(UInt(4 bits)))
+    val rspSend = master(NocInterface())
   }
+  stub()
+}
 
-  val nocUnpack = new Area {
-    val rsp = new BasePackage
-
+class NocPacker extends Component {
+  val io = new Bundle {
+    val send = master(NocInterface())
+    val rspRecId = slave(Stream(UInt(4 bits)))
+    val localSend = slave(new BasePackage)
   }
-
-  val nocPack = new Area {
-
-  }
+  val maxPending = 16
+  stub()
 }

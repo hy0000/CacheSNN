@@ -7,10 +7,11 @@ import spinal.lib._
 class NocInterface extends Bundle {
   val flit = Bits(64 bits)
 
-  def setHead(dest: UInt, src: UInt, custom: Bits): Unit = {
+  def setHead(dest: UInt, custom: Bits): Unit = {
     flit := Seq(
-      dest.resized(4), B(0, 4 bits),
-      src.resized(4), B(0, 4 bits),
+      dest.resized(4),
+      B(0, 4 bits),
+      B(0, 8 bits), // src field is added by router
       custom.resized(48)
     ).reduce(_ ## _).asBits
   }
@@ -23,7 +24,7 @@ class NocInterface extends Bundle {
 object NocInterface {
   def apply() = Stream(Fragment(new NocInterface))
 }
-
+/*
 class NocPackageHead extends Bundle {
   val dest = UInt(4 bits)
   val src = UInt(4 bits)
@@ -44,13 +45,13 @@ abstract class PackageBase[T<:Data] extends Bundle with IMasterSlave {
 class NocPackage extends PackageBase[NocPackageHead] {
   val head = Stream(new NocPackageHead)
 }
-
+*/
 object NocInterfaceLocal{
   def apply() = new NocInterfaceLocal()
 }
 
 class NocInterfaceLocal extends Bundle with IMasterSlave {
-  val send, rec = new NocPackage
+  val send, rec = NocInterface()
 
   override def asMaster(): Unit = {
     master(send)

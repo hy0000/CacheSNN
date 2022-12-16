@@ -7,7 +7,7 @@ import scala.collection.mutable
 
 class RingRouter(routerConfig: RouterConfig) extends Component {
   val io = new Bundle {
-    val local = master(NocInterfaceLocal())
+    val local = slave(NocInterfaceLocal())
     val leftIn, rightIn = slave(NocInterface())
     val leftOut, rightOut = master(NocInterface())
   }
