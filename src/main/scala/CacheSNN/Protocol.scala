@@ -61,7 +61,7 @@ object AER {
   }
 }
 
-class BasePackageHead extends Bundle {
+class BasePacketHead extends Bundle {
   val dest = UInt(4 bits)
   val packetType: PackageType.C = PackageType()
   val field0 = Bool()
@@ -82,7 +82,7 @@ class BasePackageHead extends Bundle {
   }
 }
 
-abstract class PackageBase[T<:Data] extends Bundle with IMasterSlave {
+abstract class PacketBase[T<:Data] extends Bundle with IMasterSlave {
   // behaviour is like the axi aw/w channel
   // body should not fire earlier than head
   val head:Stream[T]
@@ -93,11 +93,11 @@ abstract class PackageBase[T<:Data] extends Bundle with IMasterSlave {
   }
 }
 
-class BasePackage extends PackageBase[BasePackageHead] {
-  val head = Stream(new BasePackageHead)
+class BasePacket extends PacketBase[BasePacketHead] {
+  val head = Stream(new BasePacketHead)
 }
 
-class AerPackageHead extends Bundle {
+class AerPacketHead extends Bundle {
   val eventType: AER.TYPE.C = AER.TYPE()
   val nid = UInt(16 bits)
 
@@ -111,6 +111,6 @@ class AerPackageHead extends Bundle {
   }
 }
 
-class AerPackage extends PackageBase[AerPackageHead] {
-  val head = Stream(new AerPackageHead)
+class AerPacket extends PacketBase[AerPacketHead] {
+  val head = Stream(new AerPacketHead)
 }
