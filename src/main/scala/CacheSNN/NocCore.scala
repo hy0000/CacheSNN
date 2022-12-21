@@ -32,7 +32,7 @@ abstract class NocCore extends Component {
   val noc = master(NocInterfaceLocal())
 
   val supportAsMemMaster:Boolean = false
-  val supportAsMemSlave:Boolean = false
+  val supportAsMemSlave:Boolean = true
 
   val interface = new Bundle {
     val aer = master(new AerPacket) // decoded aer data

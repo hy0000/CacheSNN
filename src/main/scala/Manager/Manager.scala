@@ -7,6 +7,9 @@ import spinal.lib.bus.amba3.apb.Apb3
 import spinal.lib.bus.amba4.axi.{Axi4, Axi4Config}
 
 class Manager extends NocCore {
+  override val supportAsMemMaster = true
+  override val supportAsMemSlave = false
+
   val io = new Bundle {
     val externalMemory = master(Axi4(CacheSNN.externalMemoryAxi4Config))
     val ctrl = slave(Apb3(CacheSNN.apbConfig))
