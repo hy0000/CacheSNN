@@ -1,6 +1,6 @@
 package Synapse
 
-import CacheSNN.{AER, CacheSNN, NocCore}
+import CacheSNN.{AER, NocCore}
 import RingNoC.NocInterfaceLocal
 import Util.MemAccessBusConfig
 import spinal.core._

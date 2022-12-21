@@ -8,10 +8,10 @@ class NocInterface extends Bundle {
 
   def setHead(dest: UInt, custom: Bits): Unit = {
     flit := Seq(
-      dest.resized(4),
+      dest.resize(4),
       B(0, 4 bits),
       B(0, 8 bits), // src field is added by router
-      custom.resized(48)
+      custom.resize(48)
     ).reduce(_ ## _).asBits
   }
 

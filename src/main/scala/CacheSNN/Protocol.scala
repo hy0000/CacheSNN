@@ -25,7 +25,7 @@ import spinal.lib._
  *                                                  | curr  | 0   | nid |   data     |
  *                                                  | W_R/W | 0   | nid |   data     |
  **/
-object PackageType extends SpinalEnum {
+object PacketType extends SpinalEnum {
   val R_CMD = newElement("reg-cmd")
   val R_RSP = newElement("reg-rsp")
   val D_CMD = newElement("data-cmd")
@@ -63,7 +63,7 @@ object AER {
 
 class BasePacketHead extends Bundle {
   val dest = UInt(4 bits)
-  val packetType: PackageType.C = PackageType()
+  val packetType: PacketType.C = PacketType()
   val field0 = Bool()
   val field1 = Bits(8 bits)
   val id = UInt(4 bits)
@@ -74,9 +74,9 @@ class BasePacketHead extends Bundle {
   }
 
   def assignFromNocCustomField(b:Bits): Unit ={
-    packetType := b(47 downto 45).asInstanceOf[PackageType.C]
+    packetType.assignFromBits(b(47 downto 45))
     field0 := b(44)
-    field2 := b(43 downto 36)
+    field1 := b(43 downto 36)
     id := b(35 downto 32).asUInt
     field2 := b(31 downto 0)
   }
@@ -113,4 +113,21 @@ class AerPacketHead extends Bundle {
 
 class AerPacket extends PacketBase[AerPacketHead] {
   val head = Stream(new AerPacketHead)
+}
+
+class BaseReadRsp extends Bundle {
+  val data = Bits(64 bits)
+  val id = UInt(4 bits)
+}
+
+object BaseReadRsp {
+  def apply(): Stream[Fragment[BaseReadRsp]] = Stream(Fragment(new BaseReadRsp))
+}
+
+class BaseWriteRsp extends Bundle {
+  val id = UInt(4 bits)
+}
+
+object BaseWriteRsp {
+  def apply(): Stream[BaseWriteRsp] = Stream(new BaseWriteRsp)
 }
