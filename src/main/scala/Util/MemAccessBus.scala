@@ -15,7 +15,7 @@ class MemAccessCmd(c:MemAccessBusConfig) extends Bundle {
 
 case class MemAccessBus(c:MemAccessBusConfig) extends Bundle with IMasterSlave {
   val cmd = Stream(new MemAccessCmd(c))
-  val rsp = Flow(Fragment(cloneOf(cmd.data)))
+  val rsp = Stream(Fragment(cloneOf(cmd.data)))
 
   override def asMaster(): Unit = {
     master(cmd)
@@ -48,8 +48,8 @@ class MemAccessBusToPipeLineMemoryBus(c:MemAccessBusConfig) extends Component {
     addrIncr.clear()
   }
   val inReadBurst = cmdS2m.valid && !cmdS2m.write && !last
-  cmdS2m.ready := !inReadBurst && that.cmd.ready
-  that.cmd.valid := cmdS2m.valid
+  cmdS2m.ready := !inReadBurst && cmdFire
+  that.cmd.valid := cmdS2m.valid && io.input.rsp.ready
   that.cmd.write := cmdS2m.write
   that.cmd.address := cmdS2m.address  + (addrIncr @@ U"000")
   that.cmd.data := cmdS2m.data
@@ -72,5 +72,5 @@ class MemAccessBusToPipeLineMemoryBus(c:MemAccessBusConfig) extends Component {
     ret.fragment := that.rsp.data
     ret.last := lastRsp
     ret
-  }
+  }.toStream.queueLowLatency(4)
 }
