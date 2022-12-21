@@ -27,10 +27,10 @@ import spinal.lib._
  *                                                  | W_R/W | 0   | nid |   data     |
  **/
 object PacketType extends SpinalEnum {
-  val R_CMD = newElement("reg-cmd")
-  val R_RSP = newElement("reg-rsp")
-  val D_CMD = newElement("data-cmd")
-  val D_RSP = newElement("data-rsp")
+  val R_CMD = newElement("reg_cmd")
+  val R_RSP = newElement("reg_rsp")
+  val D_CMD = newElement("data_cmd")
+  val D_RSP = newElement("data_rsp")
   val AER = newElement("aer")
   val ERROR = newElement("error")
 
@@ -48,10 +48,10 @@ object AER {
   val nidWidth = 16
 
   object TYPE extends SpinalEnum {
-    val W_READ = newElement("weight-read")
-    val W_WRITE = newElement("weight-write")
-    val PRE_SPIKE = newElement("pre-spike")
-    val POST_SPIKE = newElement("pre-spike")
+    val W_READ = newElement("weight_read")
+    val W_WRITE = newElement("weight_write")
+    val PRE_SPIKE = newElement("pre_spike")
+    val POST_SPIKE = newElement("pre_spike")
     val CURRENT = newElement("current")
 
     defaultEncoding = SpinalEnumEncoding("staticEncoding")(

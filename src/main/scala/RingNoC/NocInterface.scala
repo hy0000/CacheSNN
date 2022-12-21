@@ -6,11 +6,12 @@ import spinal.lib._
 class NocInterface extends Bundle {
   val flit = Bits(64 bits)
 
-  def setHead(dest: UInt, custom: Bits): Unit = {
+  def setHead(dest: UInt, src:UInt, custom: Bits): Unit = {
     flit := Seq(
       dest.resize(4),
       B(0, 4 bits),
-      B(0, 8 bits), // src field is added by router
+      src.resize(4),
+      B(0, 4 bits),
       custom.resize(48)
     ).reduce(_ ## _).asBits
   }

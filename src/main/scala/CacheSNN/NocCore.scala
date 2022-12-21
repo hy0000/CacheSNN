@@ -8,7 +8,7 @@ import spinal.lib.bus.amba3.apb._
 import spinal.lib.fsm._
 
 /**
- * All cores in this system extends from NocCore class
+ * All cores in CacheSnn NoC extends from NocCore class
  *
  * NocCore provides packet decode logic which can:
  *  - access registers/memory automatically
@@ -44,33 +44,23 @@ abstract class NocCore extends Component {
   }
 
   val nocUnPacker = new NocUnPacker(supportAsMemMaster, supportAsMemSlave)
-  val nocPacker = new NocPacker
+  val nocPacker = new NocPacker(supportAsMemMaster)
 
   nocUnPacker.io.nocRec << noc.rec
-
   nocUnPacker.io.aer <> interface.aer
+
   if(supportAsMemSlave){
     nocUnPacker.io.regBus <> interface.regBus
     nocUnPacker.io.dataBus <> interface.dataBus
-  }else{
-    for(bt <- nocUnPacker.io.regBus.flatten ++ nocUnPacker.io.dataBus.flatten){
-      if(bt.isInput){
-        bt := bt.getZero
-      }else{
-        bt.allowPruning()
-      }
-    }
   }
+
   if(supportAsMemMaster){
     nocUnPacker.io.readRsp >> interface.readRsp
     nocUnPacker.io.writeRsp >> interface.writeRsp
-  }else{
-    nocUnPacker.io.readRsp.setBlocked()
-    nocUnPacker.io.writeRsp.setBlocked()
-  }
 
-  nocPacker.io.rspRecId << nocUnPacker.io.rspRecId
-  nocPacker.io.localSend <> interface.localSend
+    nocPacker.io.rspRecId << nocUnPacker.io.rspRecId
+    nocPacker.io.localSend <> interface.localSend
+  }
 
   noc.send << StreamArbiterFactory.fragmentLock.lowerFirst.on(
     Seq(nocUnPacker.io.rspSend, nocPacker.io.send)
@@ -91,8 +81,9 @@ class NocUnPacker(supportMemMaster:Boolean, supportMemSlave:Boolean) extends Com
 
   val head = RegNextWhen(io.nocRec.fragment, io.nocRec.firstFire)
   // base packet head
-  val bph = new BasePacketHead
-  bph.assignFromNocCustomField(head.custom)
+  val bph, bphReg = new BasePacketHead
+  bph.assignFromNocCustomField(io.nocRec.custom)
+  bphReg.assignFromNocCustomField(head.custom)
 
   io.flattenForeach{bt =>
     if(bt.isOutput){
@@ -101,14 +92,14 @@ class NocUnPacker(supportMemMaster:Boolean, supportMemSlave:Boolean) extends Com
   }
 
   val apb3RegAccessFsm = new StateMachine {
-    val setup = makeInstantEntry()
+    val setup = new State with EntryPoint
     val access = new State
     val rsp = new State
 
     this.isRunning{
-      io.regBus.PWRITE := bph.write
-      io.regBus.PADDR := bph.field1.asUInt
-      io.regBus.PWDATA := bph.field2
+      io.regBus.PWRITE := bphReg.write
+      io.regBus.PADDR := bphReg.field1.asUInt
+      io.regBus.PWDATA := bphReg.field2
     }
 
     val rData = RegNextWhen(io.regBus.PRDATA, io.regBus.PREADY)
@@ -129,8 +120,8 @@ class NocUnPacker(supportMemMaster:Boolean, supportMemSlave:Boolean) extends Com
     rsp
       .whenIsActive{
         io.rspSend.valid := True
-        val custom = NocCore.regRspPack(bph.id, rData)
-        io.rspSend.setHead(dest = head.src, custom)
+        val custom = NocCore.regRspPack(bphReg.id, rData)
+        io.rspSend.setHead(dest = head.src, src = head.dest, custom)
         when(io.rspSend.ready){
           exitFsm()
         }
@@ -138,16 +129,16 @@ class NocUnPacker(supportMemMaster:Boolean, supportMemSlave:Boolean) extends Com
   }
 
   val dataAccessFsm = new StateMachine {
-    val cmd = makeInstantEntry()
+    val cmd = new State with EntryPoint
     val rspHead, readRspData= new State
 
     cmd
       .whenIsActive{
-        io.dataBus.cmd.valid := io.nocRec.ready || bph.write
-        io.dataBus.cmd.write := bph.write
-        io.dataBus.cmd.len := bph.field1.asUInt
-        io.dataBus.cmd.address := bph.field2.asUInt.resized
-        when(bph.write) {
+        io.dataBus.cmd.valid := io.nocRec.ready || bphReg.write
+        io.dataBus.cmd.write := bphReg.write
+        io.dataBus.cmd.len := bphReg.field1.asUInt
+        io.dataBus.cmd.address := bphReg.field2.asUInt.resized
+        when(bphReg.write) {
           io.dataBus.cmd.data := io.nocRec.flit
           io.nocRec.ready := io.dataBus.cmd.ready
           when(io.nocRec.lastFire){
@@ -162,11 +153,11 @@ class NocUnPacker(supportMemMaster:Boolean, supportMemSlave:Boolean) extends Com
     rspHead
       .whenIsActive{
         io.rspSend.valid := True
-        val custom = NocCore.dataRspHeadPack(bph.id)
-        io.rspSend.setHead(dest = head.src, custom)
-        io.rspSend.last := bph.write
+        val custom = NocCore.dataRspHeadPack(bphReg.id)
+        io.rspSend.setHead(dest = head.src, src = head.dest, custom)
+        io.rspSend.last := bphReg.write
         when(io.rspSend.ready) {
-          when(bph.write){
+          when(bphReg.write){
             exitFsm()
           }otherwise{
             goto(readRspData)
@@ -186,13 +177,13 @@ class NocUnPacker(supportMemMaster:Boolean, supportMemSlave:Boolean) extends Com
   }
 
   val aerFsm = new StateMachine {
-    val sendHead = makeInstantEntry()
+    val sendHead = new State with EntryPoint
     val sendBody = new State
 
     sendHead
       .whenIsActive{
         io.aer.head.valid := True
-        io.aer.head.assignFromAerCustomField(bph.field2)
+        io.aer.head.assignFromAerCustomField(bphReg.field2)
         when(io.aer.head.ready){
           goto(sendBody)
         }
@@ -212,9 +203,9 @@ class NocUnPacker(supportMemMaster:Boolean, supportMemSlave:Boolean) extends Com
     sendId
       .whenIsActive{
         io.rspRecId.valid := True
-        io.rspRecId.payload := bph.id
+        io.rspRecId.payload := bphReg.id
         when(io.rspRecId.ready){
-          when(bph.write){
+          when(bphReg.write){
             goto(writeRsp)
           }otherwise{
             goto(readRsp)
@@ -224,7 +215,7 @@ class NocUnPacker(supportMemMaster:Boolean, supportMemSlave:Boolean) extends Com
     writeRsp
       .whenIsActive{
         io.writeRsp.valid := True
-        io.writeRsp.id := bph.id
+        io.writeRsp.id := bphReg.id
         when(io.writeRsp.ready){
           exitFsm()
         }
@@ -232,7 +223,7 @@ class NocUnPacker(supportMemMaster:Boolean, supportMemSlave:Boolean) extends Com
     readRsp
       .whenIsActive{
         io.readRsp.valid := True
-        io.readRsp.id := bph.id
+        io.readRsp.id := bphReg.id
         io.readRsp.data := io.nocRec.flit
         io.readRsp.last := io.nocRec.last
         when(io.readRsp.ready) {
@@ -241,15 +232,16 @@ class NocUnPacker(supportMemMaster:Boolean, supportMemSlave:Boolean) extends Com
       }
   }
 
+  // send error packet head to manager
   val headErrorFsm = new StateMachine {
-    val reportHeadToManager = makeInstantEntry()
+    val reportHeadToManager = new State with EntryPoint
     val consumeBody = new State
 
     reportHeadToManager
       .whenIsActive{
         io.rspSend.valid := True
-        val custom = PacketType.ERROR.asBits.resize(3) ## bph.packetType.asBits.resize(45)
-        io.rspSend.setHead(CacheSNN.managerId, custom)
+        val custom = PacketType.ERROR.asBits.resize(3) ## bphReg.packetType.asBits.resize(45)
+        io.rspSend.setHead(CacheSNN.managerId, src = head.dest, custom)
         when(io.rspSend.ready){
           when(io.nocRec.isFirst){
             exitFsm()
@@ -275,31 +267,32 @@ class NocUnPacker(supportMemMaster:Boolean, supportMemSlave:Boolean) extends Com
     val headError = new StateFsm(headErrorFsm)
     val rspRec = new StateFsm(rspRecFsm)
 
+    Seq(cmdData, cmdReg, cmdAer, rspRec, headError).foreach { state =>
+      state.whenCompleted(goto(waitAndBufferPacketHead))
+    }
+
     waitAndBufferPacketHead
       .whenIsActive{
         io.nocRec.ready := True
         when(io.nocRec.valid){
-          switch(bph.packetType.asBits){
+          switch(bph.packetType){
             if(supportMemSlave){
-              is(PacketType.R_CMD.asBits) { goto(cmdReg) }
-              is(PacketType.D_CMD.asBits) { goto(cmdData) }
+              is(PacketType.R_CMD) { goto(cmdReg) }
+              is(PacketType.D_CMD) { goto(cmdData) }
             }
             if (supportMemMaster) {
-              is(PacketType.R_RSP.asBits) { goto(rspRec) }
-              is(PacketType.D_RSP.asBits) { goto(rspRec) }
+              is(PacketType.R_RSP) { goto(rspRec) }
+              is(PacketType.D_RSP) { goto(rspRec) }
             }
-            is(PacketType.AER.asBits) { goto(cmdAer) }
+            is(PacketType.AER) { goto(cmdAer) }
             default { goto(headError) }
           }
         }
       }
-    Seq(cmdData, cmdReg, cmdAer, rspRec, headError).foreach{ state =>
-      state.whenCompleted(goto(waitAndBufferPacketHead))
-    }
   }
 }
 
-class NocPacker extends Component {
+class NocPacker(supportMemMaster:Boolean) extends Component {
   val io = new Bundle {
     val send = master(NocInterface())
     val rspRecId = slave(Stream(UInt(4 bits)))
