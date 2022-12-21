@@ -13,13 +13,14 @@ import spinal.lib._
  *                       |--------------- base protocol ----------------|
  *                       | 3b    | 1b  | 8b   | 4b  | 32b               |
  *                       | R_CMD | w   | addr | id  | data              |   -        |
- *                       | R_RSP | 0          | id  | data              |   -        |
+ *                       | R_RSP | w   | 0    | id  | data              |   -        |
  *                       | D_CMD | w   | len  | id  | addr              |   data     |
- *                       | D_RSP | 0          | id  | 0                 |   data     |
- *                       | AER   | 0   | len  | id  |                   |   —        |
+ *                       | D_RSP | w   | 0    | id  | 0                 |   data     |
+ *                       | ERROR |                                      |            |
+ *                       | AER   | 0          | id  |                   |   —        |
  *
  *                                                  |--- AER protocol --|
- *                                                  | 4b    | 12b | 16b |
+ *                                                  | 3b    | 13b | 16b |
  *                                                  | pre   | 0   | nid |   nid mask |
  *                                                  | post  | 0   | nid |   nid mask |
  *                                                  | curr  | 0   | nid |   data     |
@@ -31,6 +32,7 @@ object PacketType extends SpinalEnum {
   val D_CMD = newElement("data-cmd")
   val D_RSP = newElement("data-rsp")
   val AER = newElement("aer")
+  val ERROR = newElement("error")
 
   defaultEncoding = SpinalEnumEncoding("staticEncoding")(
     R_CMD -> 0,
@@ -38,6 +40,7 @@ object PacketType extends SpinalEnum {
     D_CMD -> 2,
     D_RSP -> 3,
     AER -> 4,
+    ERROR -> 5,
   )
 }
 
@@ -64,18 +67,18 @@ object AER {
 class BasePacketHead extends Bundle {
   val dest = UInt(4 bits)
   val packetType: PacketType.C = PacketType()
-  val field0 = Bool()
+  val write = Bool()
   val field1 = Bits(8 bits)
   val id = UInt(4 bits)
   val field2 = Bits(32 bits)
 
   def toNocCustomField: Bits = {
-    packetType.asBits.resized(3) ## field0 ## field1 ## id ## field2
+    packetType.asBits.resized(3) ## write ## field1 ## id ## field2
   }
 
   def assignFromNocCustomField(b:Bits): Unit ={
     packetType.assignFromBits(b(47 downto 45))
-    field0 := b(44)
+    write := b(44)
     field1 := b(43 downto 36)
     id := b(35 downto 32).asUInt
     field2 := b(31 downto 0)
@@ -102,11 +105,11 @@ class AerPacketHead extends Bundle {
   val nid = UInt(16 bits)
 
   def toAerCustomField: Bits = {
-    eventType.asBits.resized(4) ## B(0, 12 bits) ## nid
+    eventType.asBits.resize(3) ## B(0, 13 bits) ## nid
   }
 
   def assignFromAerCustomField(b: Bits): Unit = {
-    eventType := b(31 downto 28).asInstanceOf[AER.TYPE.C]
+    eventType.assignFromBits(b(31 downto 29))
     nid := b(15 downto 0).asUInt
   }
 }
