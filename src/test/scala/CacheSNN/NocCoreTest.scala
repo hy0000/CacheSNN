@@ -2,7 +2,7 @@ package CacheSNN
 
 import CacheSnnTest.simConfig
 import sim._
-import RingNoC.sim.{NocInterfaceDriver, NocInterfaceMonitor}
+import RingNoC.sim.{NocInterfaceDriver, NocInterfaceMonitor, NocPacket}
 import Util.sim.MemAccessBusMemSlave
 import org.scalatest.funsuite.AnyFunSuite
 import spinal.core.sim._
@@ -11,8 +11,37 @@ import spinal.lib.sim.StreamReadyRandomizer
 
 import scala.util.Random
 
-class NocCoreTest {
+class NocCoreTest extends AnyFunSuite {
+  class NocCoreInst extends NocCore {
+    override val supportAsMemMaster = false
+    override val supportAsMemSlave = false
+    slave(interface.localSend)
+    interface.aer.head.setBlocked()
+    interface.aer.body.setBlocked()
+  }
 
+  val complied = simConfig.compile(new NocCoreInst)
+
+  case class NocCoreAgent(nocRecDriver: NocInterfaceDriver,
+                          nocSendMonitor: NocInterfaceMonitor)
+
+  test("packet send test"){
+    complied.doSim{ dut =>
+      dut.clockDomain.forkStimulus(2)
+      SimTimeout(10000)
+      dut.noc.rec.valid #= false
+      val nocSendMonitor = new NocInterfaceMonitor(dut.noc.send, dut.clockDomain)
+      val localSendDriver = new NocInterfaceDriver(dut.interface.localSend, dut.clockDomain)
+
+      val packets = Seq.fill(10){
+        val data = Seq.fill(Random.nextInt(256))(Random.nextInt(65536).toBigInt)
+        NocPacket(Random.nextInt(16), Random.nextInt(16), Random.nextInt(65536), data)
+      }
+      localSendDriver.sendPacket(packets)
+      nocSendMonitor.addPacket(packets)
+      nocSendMonitor.waiteComplete()
+    }
+  }
 }
 
 class NocUnPackerTest extends AnyFunSuite {
@@ -126,7 +155,7 @@ class NocUnPackerTest extends AnyFunSuite {
           dataReadRspPacket
         )
 
-        agent.nocRecDriver.sendPacket(packets: _*)
+        agent.nocRecDriver.sendPacket(packets)
 
         // reg write rsp
         dut.clockDomain.waitSamplingWhere(dut.io.writeRsp.valid.toBoolean && dut.io.writeRsp.ready.toBoolean)
@@ -166,8 +195,8 @@ class NocUnPackerTest extends AnyFunSuite {
         weightWritePacket
       )
 
-      agent.nocRecDriver.sendPacket(packets:_*)
-      agent.aerMonitor.addPacket(packets:_*)
+      agent.nocRecDriver.sendPacket(packets)
+      agent.aerMonitor.addPacket(packets)
       agent.aerMonitor.waiteComplete()
     }
   }

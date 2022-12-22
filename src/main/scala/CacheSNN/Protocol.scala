@@ -73,7 +73,6 @@ class BasePacketHead extends Bundle {
   val field1 = Bits(8 bits)
   val id = UInt(4 bits)
   val field2 = Bits(32 bits)
-  val last = Bool()
 
   def toNocCustomField: Bits = {
     packetType.asBits.resize(3) ## write ## field1 ## id ## field2

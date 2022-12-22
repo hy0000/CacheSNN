@@ -17,6 +17,12 @@ class NocInterfaceMonitor(noc: Stream[Fragment[NocInterface]], clockDomain: Cloc
     }
   }
 
+  def addPacket(ps: Iterable[NocPacket]): Unit ={
+    for (p <- ps) {
+      addPacket(p)
+    }
+  }
+
   def usingReadyRandomizer(): Unit = {
     StreamReadyRandomizer(noc, clockDomain)
   }

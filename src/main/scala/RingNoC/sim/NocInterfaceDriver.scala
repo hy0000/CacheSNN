@@ -36,4 +36,10 @@ class NocInterfaceDriver(noc:Stream[Fragment[NocInterface]], clockDomain: ClockD
       }
     }
   }
+
+  def sendPacket(ps:Iterable[NocPacket]): Unit ={
+    for(p <- ps){
+      sendPacket(p)
+    }
+  }
 }

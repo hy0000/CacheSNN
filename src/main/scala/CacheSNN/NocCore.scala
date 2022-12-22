@@ -36,12 +36,12 @@ abstract class NocCore extends Component {
   val supportAsMemSlave:Boolean = true
 
   val interface = new Bundle {
-    val aer = master(new AerPacket) // decoded aer data
-    val localSend = slave(NocInterface()) // for user logic to send packet
-    val regBus  = ifGen(supportAsMemSlave)(master(NocCore.regBus)) // for reg ctrl
-    val dataBus = ifGen(supportAsMemSlave)(master(MemAccessBus(MemAccessBusConfig(64, 32)))) // as memory slave for accessing
-    val readRsp  = ifGen(supportAsMemMaster)(master(BaseReadRsp()))
-    val writeRsp = ifGen(supportAsMemMaster)(master(BaseWriteRsp()))
+    val aer = new AerPacket // decoded aer data
+    val localSend = NocInterface() // for user logic to send packet
+    val regBus  = ifGen(supportAsMemSlave)(NocCore.regBus) // for reg ctrl
+    val dataBus = ifGen(supportAsMemSlave)(MemAccessBus(MemAccessBusConfig(64, 32))) // as memory slave for accessing
+    val readRsp  = ifGen(supportAsMemMaster)(BaseReadRsp())
+    val writeRsp = ifGen(supportAsMemMaster)(BaseWriteRsp())
   }
 
   val nocUnPacker = new NocUnPacker(supportAsMemMaster, supportAsMemSlave)
@@ -52,15 +52,23 @@ abstract class NocCore extends Component {
   if(supportAsMemSlave){
     nocUnPacker.io.regBus <> interface.regBus
     nocUnPacker.io.dataBus <> interface.dataBus
+  }else{
+    nocUnPacker.io.regBus.PREADY := False
+    nocUnPacker.io.regBus.PRDATA := 0
+    nocUnPacker.io.dataBus.cmd.setBlocked()
+    nocUnPacker.io.dataBus.rsp.setIdle()
   }
 
   if(supportAsMemMaster){
     nocUnPacker.io.readRsp >> interface.readRsp
     nocUnPacker.io.writeRsp >> interface.writeRsp
+  }else{
+    nocUnPacker.io.readRsp.setBlocked()
+    nocUnPacker.io.writeRsp.setBlocked()
   }
 
   noc.send << StreamArbiterFactory.fragmentLock.lowerFirst.on(
-    Seq(nocUnPacker.io.rspSend, interface.localSend)
+    Seq(nocUnPacker.io.rspSend.stage(), interface.localSend)
   )
 }
 

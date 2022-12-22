@@ -34,6 +34,12 @@ case class AerMonitor(aer:AerPacket, clockDomain: ClockDomain) {
     }
   }
 
+  def addPacket(ps: Iterable[AerPacketSim]): Unit ={
+    for(p <- ps){
+      addPacket(p)
+    }
+  }
+
   def waiteComplete(): Unit = {
     clockDomain.waitSamplingWhere(packetQueue.isEmpty && bodyQueue.isEmpty)
   }
