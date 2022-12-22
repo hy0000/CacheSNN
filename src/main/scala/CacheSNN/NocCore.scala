@@ -57,8 +57,6 @@ abstract class NocCore extends Component {
   if(supportAsMemMaster){
     nocUnPacker.io.readRsp >> interface.readRsp
     nocUnPacker.io.writeRsp >> interface.writeRsp
-
-    nocPacker.io.rspRecId << nocUnPacker.io.rspRecId
     nocPacker.io.localSend <> interface.localSend
   }
 
@@ -73,7 +71,6 @@ class NocUnPacker(supportMemMaster:Boolean, supportMemSlave:Boolean) extends Com
     val regBus = master(NocCore.regBus)
     val dataBus = master(MemAccessBus(MemAccessBusConfig(64, 32)))
     val aer = master(new AerPacket)
-    val rspRecId = master(Stream(UInt(4 bits)))
     val rspSend = master(NocInterface())
     val readRsp = master(BaseReadRsp())
     val writeRsp = master(BaseWriteRsp())
@@ -203,20 +200,17 @@ class NocUnPacker(supportMemMaster:Boolean, supportMemSlave:Boolean) extends Com
   }
 
   val rspRecFsm = new StateMachine {
-    val sendId = new State with EntryPoint
+    val start = new State with EntryPoint
     val regReadRsp, dataReadRsp, writeRsp = new State
-    sendId
+
+    start
       .whenIsActive{
-        io.rspRecId.valid := True
-        io.rspRecId.payload := bphReg.id
-        when(io.rspRecId.ready){
-          when(bphReg.write){
-            goto(writeRsp)
-          }elsewhen(bphReg.packetType===PacketType.R_RSP){
-            goto(regReadRsp)
-          }otherwise{
-            goto(dataReadRsp)
-          }
+        when(bphReg.write){
+          goto(writeRsp)
+        }elsewhen(bphReg.packetType===PacketType.R_RSP){
+          goto(regReadRsp)
+        }otherwise{
+          goto(dataReadRsp)
         }
       }
     writeRsp
@@ -313,7 +307,6 @@ class NocUnPacker(supportMemMaster:Boolean, supportMemSlave:Boolean) extends Com
 class NocPacker(supportMemMaster:Boolean) extends Component {
   val io = new Bundle {
     val send = master(NocInterface())
-    val rspRecId = slave(Stream(UInt(4 bits)))
     val localSend = slave(new BasePacket)
   }
   val maxPending = 16

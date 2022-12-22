@@ -45,7 +45,7 @@ class NocUnPackerTest extends AnyFunSuite {
     val dataBusSlave = MemAccessBusMemSlave(dut.io.dataBus, dut.clockDomain, 3)
     val aerMonitor = AerMonitor(dut.io.aer, dut.clockDomain)
 
-    Seq(dut.io.aer.head, dut.io.aer.body, dut.io.rspRecId, dut.io.readRsp, dut.io.writeRsp)
+    Seq(dut.io.aer.head, dut.io.aer.body, dut.io.readRsp, dut.io.writeRsp)
       .foreach(s => StreamReadyRandomizer(s, dut.clockDomain))
 
     NocUnPackerAgent(
@@ -123,10 +123,6 @@ class NocUnPackerTest extends AnyFunSuite {
 
       agent.nocRecDriver.sendPacket(packets:_*)
 
-      val idRec = mutable.Queue(packets.map(_.id):_*)
-      StreamMonitor(dut.io.rspRecId, dut.clockDomain){id =>
-        assert(id.toInt==idRec.dequeue())
-      }
       // reg write rsp
       dut.clockDomain.waitSamplingWhere(dut.io.writeRsp.valid.toBoolean && dut.io.writeRsp.ready.toBoolean)
       assert(dut.io.writeRsp.id.toInt == 1)
@@ -143,8 +139,6 @@ class NocUnPackerTest extends AnyFunSuite {
         assert(dut.io.readRsp.data.toBigInt == data)
         assert(dut.io.readRsp.id.toInt == 4)
       }
-
-      dut.clockDomain.waitSamplingWhere(idRec.isEmpty)
     }
   }
 
