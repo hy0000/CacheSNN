@@ -24,7 +24,8 @@ import spinal.lib._
  *                                                  | pre   | 0   | nid |   nid mask |
  *                                                  | post  | 0   | nid |   nid mask |
  *                                                  | curr  | 0   | nid |   data     |
- *                                                  | W_R/W | 0   | nid |   data     |
+ *                                                  | W_F   | 0   | nid |            |
+ *                                                  | W_W   | 0   | nid |   data     |
  **/
 object PacketType extends SpinalEnum {
   val R_CMD = newElement("reg_cmd")
@@ -48,14 +49,14 @@ object AER {
   val nidWidth = 16
 
   object TYPE extends SpinalEnum {
-    val W_READ = newElement("weight_read")
+    val W_FETCH = newElement("weight_fetch")
     val W_WRITE = newElement("weight_write")
     val PRE_SPIKE = newElement("pre_spike")
     val POST_SPIKE = newElement("pre_spike")
     val CURRENT = newElement("current")
 
     defaultEncoding = SpinalEnumEncoding("staticEncoding")(
-      W_READ -> 0,
+      W_FETCH -> 0,
       W_WRITE -> 1,
       PRE_SPIKE -> 2,
       POST_SPIKE -> 3,

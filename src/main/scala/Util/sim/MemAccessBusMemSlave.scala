@@ -43,8 +43,9 @@ case class MemAccessBusMemSlave(bus:MemAccessBus, clockDomain: ClockDomain, read
         }
       } else {
         bus.cmd.ready #= false
+        val address = bus.cmd.address.toLong
         for (i <- 0 to len) {
-          val data = mem.readBigInt(bus.cmd.address.toLong + (i << 3), 8)
+          val data = mem.readBigInt(address + (i << 3), 8)
           val last = i == len
           rspQueue(queuePush) = Rsp(data, last)
           clockDomain.waitSamplingWhere(bus.rsp.ready.toBoolean)

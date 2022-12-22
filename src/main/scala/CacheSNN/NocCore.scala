@@ -136,7 +136,7 @@ class NocUnPacker(supportMemMaster:Boolean, supportMemSlave:Boolean) extends Com
 
     cmd
       .whenIsActive{
-        io.dataBus.cmd.valid := io.nocRec.ready || bphReg.write
+        io.dataBus.cmd.valid := True
         io.dataBus.cmd.write := bphReg.write
         io.dataBus.cmd.len := bphReg.field1.asUInt
         io.dataBus.cmd.address := bphReg.field2.asUInt.resized
@@ -196,12 +196,15 @@ class NocUnPacker(supportMemMaster:Boolean, supportMemSlave:Boolean) extends Com
         io.aer.body.fragment := io.nocRec.flit
         io.aer.body.last := io.nocRec.last
         io.nocRec.ready := io.aer.body.ready
+        when(io.aer.body.lastFire){
+          exitFsm()
+        }
       }
   }
 
   val rspRecFsm = new StateMachine {
-    val sendId = makeInstantEntry()
-    val readRsp, writeRsp = new State
+    val sendId = new State with EntryPoint
+    val regReadRsp, dataReadRsp, writeRsp = new State
     sendId
       .whenIsActive{
         io.rspRecId.valid := True
@@ -209,8 +212,10 @@ class NocUnPacker(supportMemMaster:Boolean, supportMemSlave:Boolean) extends Com
         when(io.rspRecId.ready){
           when(bphReg.write){
             goto(writeRsp)
+          }elsewhen(bphReg.packetType===PacketType.R_RSP){
+            goto(regReadRsp)
           }otherwise{
-            goto(readRsp)
+            goto(dataReadRsp)
           }
         }
       }
@@ -222,12 +227,22 @@ class NocUnPacker(supportMemMaster:Boolean, supportMemSlave:Boolean) extends Com
           exitFsm()
         }
       }
-    readRsp
+    dataReadRsp
       .whenIsActive{
         io.readRsp.valid := True
         io.readRsp.id := bphReg.id
         io.readRsp.data := io.nocRec.flit
         io.readRsp.last := io.nocRec.last
+        when(io.readRsp.lastFire) {
+          exitFsm()
+        }
+      }
+    regReadRsp
+      .whenIsActive{
+        io.readRsp.valid := True
+        io.readRsp.id := bphReg.id
+        io.readRsp.data := bphReg.field2.resized
+        io.readRsp.last := True
         when(io.readRsp.ready) {
           exitFsm()
         }
