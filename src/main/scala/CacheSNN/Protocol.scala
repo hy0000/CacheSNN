@@ -67,14 +67,16 @@ object AER {
 
 class BasePacketHead extends Bundle {
   val dest = UInt(4 bits)
+  val src = UInt(4 bits)
   val packetType: PacketType.C = PacketType()
   val write = Bool()
   val field1 = Bits(8 bits)
   val id = UInt(4 bits)
   val field2 = Bits(32 bits)
+  val last = Bool()
 
   def toNocCustomField: Bits = {
-    packetType.asBits.resized(3) ## write ## field1 ## id ## field2
+    packetType.asBits.resize(3) ## write ## field1 ## id ## field2
   }
 
   def assignFromNocCustomField(b:Bits): Unit ={
@@ -83,6 +85,10 @@ class BasePacketHead extends Bundle {
     field1 := b(43 downto 36)
     id := b(35 downto 32).asUInt
     field2 := b(31 downto 0)
+  }
+
+  def toNocRawHead: Bits = {
+    dest ## B"0000" ## src ## B"0000" ## toNocCustomField
   }
 }
 

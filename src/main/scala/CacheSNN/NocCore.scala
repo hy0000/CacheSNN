@@ -1,6 +1,7 @@
 package CacheSNN
 
 import RingNoC.{NocInterface, NocInterfaceLocal}
+import Util.Misc.clearIO
 import Util.{MemAccessBus, MemAccessBusConfig}
 import spinal.core._
 import spinal.lib._
@@ -36,7 +37,7 @@ abstract class NocCore extends Component {
 
   val interface = new Bundle {
     val aer = master(new AerPacket) // decoded aer data
-    val localSend = slave(new BasePacket) // for user logic to send packet
+    val localSend = slave(NocInterface()) // for user logic to send packet
     val regBus  = ifGen(supportAsMemSlave)(master(NocCore.regBus)) // for reg ctrl
     val dataBus = ifGen(supportAsMemSlave)(master(MemAccessBus(MemAccessBusConfig(64, 32)))) // as memory slave for accessing
     val readRsp  = ifGen(supportAsMemMaster)(master(BaseReadRsp()))
@@ -44,7 +45,6 @@ abstract class NocCore extends Component {
   }
 
   val nocUnPacker = new NocUnPacker(supportAsMemMaster, supportAsMemSlave)
-  val nocPacker = new NocPacker(supportAsMemMaster)
 
   nocUnPacker.io.nocRec << noc.rec
   nocUnPacker.io.aer <> interface.aer
@@ -57,11 +57,10 @@ abstract class NocCore extends Component {
   if(supportAsMemMaster){
     nocUnPacker.io.readRsp >> interface.readRsp
     nocUnPacker.io.writeRsp >> interface.writeRsp
-    nocPacker.io.localSend <> interface.localSend
   }
 
   noc.send << StreamArbiterFactory.fragmentLock.lowerFirst.on(
-    Seq(nocUnPacker.io.rspSend, nocPacker.io.send)
+    Seq(nocUnPacker.io.rspSend, interface.localSend)
   )
 }
 
@@ -75,18 +74,13 @@ class NocUnPacker(supportMemMaster:Boolean, supportMemSlave:Boolean) extends Com
     val readRsp = master(BaseReadRsp())
     val writeRsp = master(BaseWriteRsp())
   }
+  clearIO(io)
 
   val head = RegNextWhen(io.nocRec.fragment, io.nocRec.firstFire)
   // base packet head
   val bph, bphReg = new BasePacketHead
   bph.assignFromNocCustomField(io.nocRec.custom)
   bphReg.assignFromNocCustomField(head.custom)
-
-  io.flattenForeach{bt =>
-    if(bt.isOutput){
-      bt := bt.getZero
-    }
-  }
 
   val apb3RegAccessFsm = new StateMachine {
     val setup = new State with EntryPoint
@@ -302,13 +296,4 @@ class NocUnPacker(supportMemMaster:Boolean, supportMemSlave:Boolean) extends Com
         }
       }
   }
-}
-
-class NocPacker(supportMemMaster:Boolean) extends Component {
-  val io = new Bundle {
-    val send = master(NocInterface())
-    val localSend = slave(new BasePacket)
-  }
-  val maxPending = 16
-  stub()
 }
