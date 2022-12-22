@@ -16,6 +16,9 @@ class NocUnPackerTest extends AnyFunSuite {
     new NocUnPacker(supportMemMaster = true, supportMemSlave = true)
   )
 
+  val dest = 1
+  val src = 2
+
   case class NocUnPackerAgent(nocRecDriver: NocInterfaceDriver,
                               nocSendMonitor: NocInterfaceMonitor,
                               regBusSlave: Apb3MemSlave,
@@ -46,16 +49,31 @@ class NocUnPackerTest extends AnyFunSuite {
   test("error head test") {
     complied.doSim{dut =>
       val agent = initDut(dut)
-      val errorPacket = BasePacket.errorPacket(1, 2)
-      val errorPacketRsp = BasePacket.errorPacket(CacheSNN.managerId, 1).copy(field2 = PacketType.ERROR.position)
+      val errorPacket = BasePacket.errorPacket(dest, src)
+      val errorPacketRsp = BasePacket.errorPacket(dest = CacheSNN.managerId, src = dest)
+        .copy(field2 = PacketType.ERROR.position, data = Seq(), id = 0)
+
       agent.nocRecDriver.sendPacket(errorPacket)
       agent.nocSendMonitor.addPacket(errorPacketRsp)
-      dut.clockDomain.waitSampling(100)
+      agent.nocSendMonitor.waiteComplete()
     }
   }
 
   test("R_CMD test"){
+    complied.doSim { dut =>
+      val agent = initDut(dut)
+      val addr = 0x10
+      val data = 0x12345678
+      val id = 0xE
+      val writePacket = BasePacket.regWrite(dest, src, id = id, addr = addr, data = data)
+      val readPacket = BasePacket.regRead(dest, src, id = id, addr = addr)
+      agent.nocRecDriver.sendPacket(writePacket, readPacket)
 
+      val writeRsp = writePacket.toRspPacket()
+      val readRspPacket = readPacket.toRspPacket(field2 = data)
+      agent.nocSendMonitor.addPacket(writeRsp, readRspPacket)
+      agent.nocSendMonitor.waiteComplete()
+    }
   }
 
   test("D_CMD test") {

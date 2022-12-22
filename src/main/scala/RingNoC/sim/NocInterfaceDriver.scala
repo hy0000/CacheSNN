@@ -22,16 +22,18 @@ class NocInterfaceDriver(noc:Stream[Fragment[NocInterface]], clockDomain: ClockD
   val (driver, queue) = StreamDriver.queue(noc, clockDomain)
   driver.transactionDelay = () => 0
 
-  def sendPacket(p:NocPacket): Unit ={
-    queue.enqueue{n =>
-      n.flit #= p.head
-      n.last #= p.headOnly
-    }
-    if(!p.headOnly){
-      for((d, i) <- p.data.zipWithIndex){
-        queue.enqueue{n =>
-          n.flit #= d
-          n.last #= i==p.data.length
+  def sendPacket(ps:NocPacket*): Unit ={
+    for(p <- ps){
+      queue.enqueue { n =>
+        n.flit #= p.head
+        n.last #= p.headOnly
+      }
+      if (!p.headOnly) {
+        for ((d, i) <- p.data.zipWithIndex) {
+          queue.enqueue { n =>
+            n.flit #= d
+            n.last #= i == p.data.length
+          }
         }
       }
     }
@@ -41,21 +43,27 @@ class NocInterfaceDriver(noc:Stream[Fragment[NocInterface]], clockDomain: ClockD
 class NocInterfaceMonitor(noc:Stream[Fragment[NocInterface]], clockDomain: ClockDomain){
   val monitorQueue = mutable.Queue[NocPacket]()
 
-  def addPacket(p:NocPacket): Unit ={
-    monitorQueue.enqueue(p)
+  def addPacket(ps:NocPacket*): Unit ={
+    for(p <- ps){
+      monitorQueue.enqueue(p)
+    }
   }
 
   def usingReadyRandomizer(): Unit = {
     StreamReadyRandomizer(noc, clockDomain)
   }
 
+  def waiteComplete(): Unit ={
+    clockDomain.waitSamplingWhere(monitorQueue.isEmpty)
+  }
+
   noc.ready #= true
   fork{
     while (true) {
       clockDomain.waitSamplingWhere(noc.valid.toBoolean && noc.ready.toBoolean)
-      val packet = monitorQueue.dequeue()
+      val packet = monitorQueue.head
       // assert head
-      assert(noc.flit.toBigInt==packet.head)
+      assert(noc.flit.toBigInt==packet.head, s"${noc.flit.toBigInt.toString(16)} ${packet.head.toString(16)}")
       if(packet.headOnly){
         assert(noc.last.toBoolean)
       }else{
@@ -67,6 +75,7 @@ class NocInterfaceMonitor(noc:Stream[Fragment[NocInterface]], clockDomain: Clock
           assert(noc.last.toBoolean==(i==packet.data.length-1))
         }
       }
+      monitorQueue.dequeue()
     }
   }
 }

@@ -19,12 +19,12 @@ import spinal.lib.fsm._
 object NocCore {
   def regBus = Apb3(Apb3Config(8, 32))
 
-  def regRspPack(id:UInt, data:Bits): Bits = {
-    PacketType.R_RSP.asBits.resize(3) ## B(0, 9 bits) ## id ## data
+  def regRspPack(id:UInt, data:Bits, write:Bool): Bits = {
+    PacketType.R_RSP.asBits.resize(3) ## write ## B(0, 8 bits) ## id ## data
   }
 
-  def dataRspHeadPack(id:UInt): Bits = {
-    PacketType.D_RSP.asBits.resize(3) ## B(0, 9 bits) ## id.resize(4) ## B(0, 32 bits)
+  def dataRspHeadPack(id:UInt, write:Bool): Bits = {
+    PacketType.D_RSP.asBits.resize(3) ## write ## B(0, 8 bits) ## id.resize(4) ## B(0, 32 bits)
   }
 }
 
@@ -96,7 +96,7 @@ class NocUnPacker(supportMemMaster:Boolean, supportMemSlave:Boolean) extends Com
     val access = new State
     val rsp = new State
 
-    this.isRunning{
+    when(isRunning){
       io.regBus.PWRITE := bphReg.write
       io.regBus.PADDR := bphReg.field1.asUInt
       io.regBus.PWDATA := bphReg.field2
@@ -120,7 +120,9 @@ class NocUnPacker(supportMemMaster:Boolean, supportMemSlave:Boolean) extends Com
     rsp
       .whenIsActive{
         io.rspSend.valid := True
-        val custom = NocCore.regRspPack(bphReg.id, rData)
+        io.rspSend.last := True
+        val data = bphReg.write ? rData.getZero | rData
+        val custom = NocCore.regRspPack(bphReg.id, data, bphReg.write)
         io.rspSend.setHead(dest = head.src, src = head.dest, custom)
         when(io.rspSend.ready){
           exitFsm()
@@ -153,7 +155,7 @@ class NocUnPacker(supportMemMaster:Boolean, supportMemSlave:Boolean) extends Com
     rspHead
       .whenIsActive{
         io.rspSend.valid := True
-        val custom = NocCore.dataRspHeadPack(bphReg.id)
+        val custom = NocCore.dataRspHeadPack(bphReg.id, bphReg.write)
         io.rspSend.setHead(dest = head.src, src = head.dest, custom)
         io.rspSend.last := bphReg.write
         when(io.rspSend.ready) {
@@ -242,6 +244,7 @@ class NocUnPacker(supportMemMaster:Boolean, supportMemSlave:Boolean) extends Com
         io.rspSend.valid := True
         val custom = PacketType.ERROR.asBits.resize(3) ## bphReg.packetType.asBits.resize(45)
         io.rspSend.setHead(CacheSNN.managerId, src = head.dest, custom)
+        io.rspSend.last := True
         when(io.rspSend.ready){
           when(io.nocRec.isFirst){
             exitFsm()
