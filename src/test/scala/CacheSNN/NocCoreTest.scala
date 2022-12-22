@@ -6,10 +6,9 @@ import RingNoC.sim.{NocInterfaceDriver, NocInterfaceMonitor}
 import Util.sim.MemAccessBusMemSlave
 import org.scalatest.funsuite.AnyFunSuite
 import spinal.core.sim._
-import spinal.lib.sim.{StreamMonitor, StreamReadyRandomizer}
 import spinal.lib._
+import spinal.lib.sim.StreamReadyRandomizer
 
-import scala.collection.mutable
 import scala.util.Random
 
 class NocCoreTest {
@@ -17,8 +16,9 @@ class NocCoreTest {
 }
 
 class NocUnPackerTest extends AnyFunSuite {
+  val supportMemMaster, supportMemSlave = Random.nextBoolean()
   val complied = simConfig.compile(
-    new NocUnPacker(supportMemMaster = true, supportMemSlave = true)
+    new NocUnPacker(supportMemMaster, supportMemSlave)
   )
 
   val dest = 1
@@ -71,73 +71,79 @@ class NocUnPackerTest extends AnyFunSuite {
   }
 
   test("R_CMD test"){
-    complied.doSim { dut =>
-      val agent = initDut(dut)
-      val addr = 0x10
-      val data = 0x12345678
-      val id = 0xE
-      val writePacket = BasePacketSim.regWrite(dest, src, id = id, addr = addr, data = data)
-      val readPacket = BasePacketSim.regRead(dest, src, id = id, addr = addr)
-      agent.nocRecDriver.sendPacket(writePacket, readPacket)
+    if(supportMemSlave){
+      complied.doSim { dut =>
+        val agent = initDut(dut)
+        val addr = 0x10
+        val data = 0x12345678
+        val id = 0xE
+        val writePacket = BasePacketSim.regWrite(dest, src, id = id, addr = addr, data = data)
+        val readPacket = BasePacketSim.regRead(dest, src, id = id, addr = addr)
+        agent.nocRecDriver.sendPacket(writePacket, readPacket)
 
-      val writeRspPacket = writePacket.toRspPacket()
-      val readRspPacket = readPacket.toRspPacket(field2 = data)
-      agent.nocSendMonitor.addPacket(writeRspPacket, readRspPacket)
-      agent.nocSendMonitor.waiteComplete()
+        val writeRspPacket = writePacket.toRspPacket()
+        val readRspPacket = readPacket.toRspPacket(field2 = data)
+        agent.nocSendMonitor.addPacket(writeRspPacket, readRspPacket)
+        agent.nocSendMonitor.waiteComplete()
+      }
     }
   }
 
   test("D_CMD test") {
-    complied.doSim { dut =>
-      val agent = initDut(dut)
-      val addr = 0xF00
-      val id = 0xA
-      val len = Random.nextInt(255) + 1
-      val data = (0 until len).map(BigInt(_))
-      val writePacket = BasePacketSim.dataWrite(dest, src, id = id, addr = addr, data = data)
-      val readPacket = BasePacketSim.dataRead(dest, src, id = id, addr = addr, len = data.length-1)
-      agent.nocRecDriver.sendPacket(writePacket, readPacket)
+    if(supportMemSlave){
+      complied.doSim { dut =>
+        val agent = initDut(dut)
+        val addr = 0xF00
+        val id = 0xA
+        val len = Random.nextInt(255) + 1
+        val data = (0 until len).map(BigInt(_))
+        val writePacket = BasePacketSim.dataWrite(dest, src, id = id, addr = addr, data = data)
+        val readPacket = BasePacketSim.dataRead(dest, src, id = id, addr = addr, len = data.length - 1)
+        agent.nocRecDriver.sendPacket(writePacket, readPacket)
 
-      val writeRspPacket = writePacket.toRspPacket()
-      val readRspPacket = readPacket.toRspPacket(data = data)
-      agent.nocSendMonitor.addPacket(writeRspPacket, readRspPacket)
-      agent.nocSendMonitor.waiteComplete()
+        val writeRspPacket = writePacket.toRspPacket()
+        val readRspPacket = readPacket.toRspPacket(data = data)
+        agent.nocSendMonitor.addPacket(writeRspPacket, readRspPacket)
+        agent.nocSendMonitor.waiteComplete()
+      }
     }
   }
 
   test("RSP test"){
-    complied.doSim { dut =>
-      val agent = initDut(dut)
-      // construct 4 types of rsp packets
-      val regWriteRspPacket = BasePacketSim(dest = src, src = dest, packetType = PacketType.R_RSP, write = true, id = 1, field1 = 0, field2 = 0)
-      val regReadRspPacket = regWriteRspPacket.copy(id = 2, write = false, field2 = 0x666)
-      val dataWriteRspPacket = regWriteRspPacket.copy(packetType = PacketType.D_RSP, id = 3)
-      val dataReadRspPacket = dataWriteRspPacket.copy(id = 4, write = false, field1 = 2, data = Seq(6, 6, 6))
+    if(supportMemMaster){
+      complied.doSim { dut =>
+        val agent = initDut(dut)
+        // construct 4 types of rsp packets
+        val regWriteRspPacket = BasePacketSim(dest = src, src = dest, packetType = PacketType.R_RSP, write = true, id = 1, field1 = 0, field2 = 0)
+        val regReadRspPacket = regWriteRspPacket.copy(id = 2, write = false, field2 = 0x666)
+        val dataWriteRspPacket = regWriteRspPacket.copy(packetType = PacketType.D_RSP, id = 3)
+        val dataReadRspPacket = dataWriteRspPacket.copy(id = 4, write = false, field1 = 2, data = Seq(6, 6, 6))
 
-      val packets = Seq(
-        regWriteRspPacket,
-        regReadRspPacket,
-        dataWriteRspPacket,
-        dataReadRspPacket
-      )
+        val packets = Seq(
+          regWriteRspPacket,
+          regReadRspPacket,
+          dataWriteRspPacket,
+          dataReadRspPacket
+        )
 
-      agent.nocRecDriver.sendPacket(packets:_*)
+        agent.nocRecDriver.sendPacket(packets: _*)
 
-      // reg write rsp
-      dut.clockDomain.waitSamplingWhere(dut.io.writeRsp.valid.toBoolean && dut.io.writeRsp.ready.toBoolean)
-      assert(dut.io.writeRsp.id.toInt == 1)
-      // reg read rsp
-      dut.clockDomain.waitSamplingWhere(dut.io.readRsp.valid.toBoolean && dut.io.readRsp.ready.toBoolean)
-      assert(dut.io.readRsp.data.toBigInt==0x666)
-      assert(dut.io.readRsp.id.toInt==2)
-      // data write rsp
-      dut.clockDomain.waitSamplingWhere(dut.io.writeRsp.valid.toBoolean && dut.io.writeRsp.ready.toBoolean)
-      assert(dut.io.writeRsp.id.toInt == 3)
-      // data read rsp
-      for(data <- dataReadRspPacket.data){
+        // reg write rsp
+        dut.clockDomain.waitSamplingWhere(dut.io.writeRsp.valid.toBoolean && dut.io.writeRsp.ready.toBoolean)
+        assert(dut.io.writeRsp.id.toInt == 1)
+        // reg read rsp
         dut.clockDomain.waitSamplingWhere(dut.io.readRsp.valid.toBoolean && dut.io.readRsp.ready.toBoolean)
-        assert(dut.io.readRsp.data.toBigInt == data)
-        assert(dut.io.readRsp.id.toInt == 4)
+        assert(dut.io.readRsp.data.toBigInt == 0x666)
+        assert(dut.io.readRsp.id.toInt == 2)
+        // data write rsp
+        dut.clockDomain.waitSamplingWhere(dut.io.writeRsp.valid.toBoolean && dut.io.writeRsp.ready.toBoolean)
+        assert(dut.io.writeRsp.id.toInt == 3)
+        // data read rsp
+        for (data <- dataReadRspPacket.data) {
+          dut.clockDomain.waitSamplingWhere(dut.io.readRsp.valid.toBoolean && dut.io.readRsp.ready.toBoolean)
+          assert(dut.io.readRsp.data.toBigInt == data)
+          assert(dut.io.readRsp.id.toInt == 4)
+        }
       }
     }
   }
