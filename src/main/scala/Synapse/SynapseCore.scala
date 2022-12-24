@@ -69,16 +69,25 @@ object CacheConfig {
   val wordAddrWidth = log2Up(size / 8)
   val wordOffsetWidth = log2Up(size / lines / 8)
   val tagTimestampWidth = 2
+  val setIndexRange = log2Up(lines / ways) - 1 downto 0
+  val tagWidth = AER.nidWidth - setIndexRange.size
+  val wayCountPerStep = 2
+  val steps = ways / wayCountPerStep
+  val tagRamAddrWidth = log2Up(lines / wayCountPerStep)
 }
 
 case class SynapseCsr() extends Bundle {
   val len = UInt(CacheConfig.wordOffsetWidth bits)
   val learning = Bool()
   val timestamp = in UInt(CacheConfig.tagTimestampWidth bits)
+  val refractory = UInt(CacheConfig.tagTimestampWidth bits)
 }
 
 class Spike extends Bundle {
   val nid = UInt(AER.nidWidth bits)
+
+  def tag(): UInt = nid(nid.high downto nid.high - CacheConfig.tagWidth + 1)
+  def setIndex(): UInt = nid(CacheConfig.setIndexRange)
 }
 
 class SpikeEvent extends Spike {
@@ -88,6 +97,8 @@ class SpikeEvent extends Spike {
 
   def cacheAllocateFailed: Bool = cacheLineAddr.andR
   def setCacheAllocateFail(): Unit = cacheLineAddr.setAll()
+  def cacheWay: UInt = cacheLineAddr(log2Up(CacheConfig.ways)-1 downto 0)
+  def cacheSetIndex: UInt = cacheLineAddr(cacheLineAddr.high downto log2Up(CacheConfig.ways))
 }
 
 class ExpLutQuery extends Bundle with IMasterSlave {
