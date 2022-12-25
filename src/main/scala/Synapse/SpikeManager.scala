@@ -146,12 +146,24 @@ class SpikeCacheManager extends Component {
     }
   }
 
+  def tagLockUpdate(bus: TagAccessBus, address:UInt, lock: Bool, tag:UInt): Unit = {
+    bus.valid := True
+    bus.write := True
+    bus.address := address
+    bus.wData.tag := tag
+    bus.wData.valid := True
+    bus.wData.locked := lock
+    bus.wData.timeStamp := io.csr.timestamp
+  }
+
   case class Folder() extends Bundle {
     val hit = Bool()
     val replace = Bool()
     val available = Bool()
+    val step = UInt(log2Up(CacheConfig.steps) bits)
     val wayLow = UInt(log2Up(CacheConfig.wayCountPerStep) bits)
 
+    def way: UInt = step @@ wayLow
     def priority: UInt = (hit ## available ## replace).asUInt
   }
 
@@ -182,6 +194,7 @@ class SpikeCacheManager extends Component {
     currentFolder.replace := False
     currentFolder.available := False
     currentFolder.wayLow := CacheConfig.wayCountPerStep-1
+    currentFolder.step := stepDelay
     when(hit){
       currentFolder.wayLow := hitWay
       currentFolder.hit := True
@@ -194,6 +207,7 @@ class SpikeCacheManager extends Component {
     }
 
     val folder = Folder() setAsReg()
+    val allocateFailed = folder.priority===0 && tags.last.locked
 
     def fsmExitOrContinue(doneCond:Bool): Unit ={
       when(doneCond){
@@ -238,63 +252,76 @@ class SpikeCacheManager extends Component {
       }
     allocate
       .whenIsActive{
-        val allocateFailed = folder.priority===0 && tags.last.locked
         when(allocateFailed){
+          // process fail spike
           failSpike << spikeIn
           fsmExitOrContinue(failSpike.ready)
         }elsewhen folder.hit {
+          // process hit spike
           io.hitSpike << spikeIn.translateWith {
             val ret = new SpikeEvent
             ret.assignSomeByName(spikeIn.payload)
-            ret.cacheLineAddr := spikeIn.setIndex() @@ stepDelay @@ folder.wayLow
+            ret.cacheLineAddr := spikeIn.setIndex() @@ folder.way
             ret
           }
           fsmExitOrContinue(io.hitSpike.ready)
         }otherwise{
+          // process miss spike
           io.missSpike << spikeIn.translateWith {
             val ret = new MissSpike
             ret.assignSomeByName(spikeIn.payload)
-            ret.cacheLineAddr := spikeIn.setIndex() @@ stepDelay @@ folder.wayLow
+            ret.cacheLineAddr := spikeIn.setIndex() @@ folder.way
             ret.replaceNid := tags(folder.wayLow).tag @@ spikeIn.setIndex()
             ret.writeBackOnly := False
             ret
           }
-          val bus = tagBus(folder.wayLow)
-          bus.valid := True
-          bus.write := True
-          bus.wData.tag := spikeIn.tag()
-          bus.wData.valid := True
-          bus.wData.locked := True
-          bus.wData.timeStamp := io.csr.timestamp
           fsmExitOrContinue(io.missSpike.ready)
         }
       }
-  }
-
-  val spikeFreeFsm = new StateMachine {
-    val read = new State with EntryPoint
-    val free = new State
+      .onExit{
+        when(allocateFailed){
+          spikeCnt.increment()
+        }otherwise{
+          tagLockUpdate(
+            bus = tagBus(folder.wayLow),
+            address = spikeIn.setIndex() @@ folder.step,
+            lock = True,
+            tag = spikeIn.tag()
+          )
+        }
+      }
   }
 
   val fsm = new StateMachine{
     val idle = makeInstantEntry()
     val spikeAllocate = new StateFsm(spikeAllocateFsm)
-    val spikeFree = new StateFsm(spikeFreeFsm)
+    val spikeFree = new State
     val flush = new StateFsm(flushFsm)
 
-    idle
-      .whenIsActive{
-        when(io.synapseEventDone.valid) {
-          goto(spikeFree)
-        } elsewhen io.spikeIn.valid {
-          goto(spikeAllocate)
-        }elsewhen io.flush.valid {
-          goto(flush)
-        }
+    def stateChange(): Unit ={
+      when(io.synapseEventDone.valid) {
+        goto(spikeFree)
+      } elsewhen io.spikeIn.valid {
+        goto(spikeAllocate)
+      } elsewhen io.flush.valid {
+        goto(flush)
+      } otherwise {
+        goto(idle)
       }
-    Seq(spikeAllocate, spikeFree, flush).foreach{s =>
-      s.whenCompleted(goto(idle))
     }
+
+    spikeFree
+      .whenIsActive{
+        io.synapseEventDone.ready := True
+        tagLockUpdate(
+          bus = tagBus(io.synapseEventDone.cacheWayLow),
+          address = io.synapseEventDone.cacheTagAddress,
+          lock = False,
+          tag = io.synapseEventDone.tag()
+        )
+        spikeCnt.decrement()
+        goto(idle)
+      }
   }
 }
 
