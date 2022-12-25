@@ -55,25 +55,21 @@ class SpikeCacheManager extends Component {
     val spikeIn = slave(Stream(new Spike))
     val missSpike = master(Stream(MissSpike()))
     val hitSpike = master(Stream(new SpikeEvent))
+    val failSpike = master(Stream(new Spike))
     val synapseEventDone = slave(Stream(new SpikeEvent))
     val flush = slave(Event)
     val free = out Bool()
   }
 
-  val spikeFifo = StreamFifo(new Spike, 512)
-  val failSpike = Stream(new Spike)
-  spikeFifo.io.push << StreamArbiterFactory.lowerFirst
-    .on(Seq(failSpike, io.spikeIn))
-
   val spikeCnt = CounterUpDown(512)
   io.free := spikeCnt===0
 
-  io.missSpike.setIdle()
-  io.hitSpike.setIdle()
-  io.synapseEventDone.setBlocked()
-  io.flush.setBlocked()
-  failSpike.setIdle()
-  spikeFifo.io.pop.setBlocked()
+  Misc.clearIO(io.spikeIn)
+  Misc.clearIO(io.missSpike)
+  Misc.clearIO(io.hitSpike)
+  Misc.clearIO(io.synapseEventDone)
+  Misc.clearIO(io.flush)
+  Misc.clearIO(io.failSpike)
 
   case class TagItem() extends Bundle {
     val valid = Bool()
@@ -121,23 +117,26 @@ class SpikeCacheManager extends Component {
     val r = new State with EntryPoint
     val w = new State
 
-    bus.address := cnt.value.resized
     r.whenIsActive{
       bus.valid := True
       bus.write := False
+      bus.address := cnt.value.resized
       goto(w)
     }
     w.whenIsActive{
+      bus.valid := True
+      bus.write := True
+      bus.address := cnt.value.resized
+      bus.wData := TagItem().getZero
       when(bus.rData.valid){
-        bus.valid := io.missSpike.ready
-        bus.write := True
-        bus.wData := TagItem().getZero
-        io.missSpike.valid := True
+        io.missSpike.valid := io.csr.learning
         io.missSpike.nid := 0
         io.missSpike.replaceNid := bus.rData.tag @@ setIndex
       }
       when(io.missSpike.ready) {
+        cnt.increment()
         when(cnt.willOverflow){
+          io.flush.ready := True
           exitFsm()
         }otherwise{
           goto(r)
@@ -174,7 +173,7 @@ class SpikeCacheManager extends Component {
 
     val step = Counter(CacheConfig.steps)
     val stepDelay = RegNext(step.value)
-    val spikeIn = spikeFifo.io.pop
+    val spikeIn = io.spikeIn
     val tags = Vec(tagBus.map(_.rData))
 
     val hitOh = tags.map(t => t.tag===spikeIn.tag() && t.valid)
@@ -211,11 +210,7 @@ class SpikeCacheManager extends Component {
 
     def fsmExitOrContinue(doneCond:Bool): Unit ={
       when(doneCond){
-        when(io.synapseEventDone.valid){
-          exitFsm()
-        }otherwise{
-          goto(query1)
-        }
+        exitFsm()
       }
     }
 
@@ -254,8 +249,8 @@ class SpikeCacheManager extends Component {
       .whenIsActive{
         when(allocateFailed){
           // process fail spike
-          failSpike << spikeIn
-          fsmExitOrContinue(failSpike.ready)
+          io.failSpike << spikeIn
+          fsmExitOrContinue(io.failSpike.ready)
         }elsewhen folder.hit {
           // process hit spike
           io.hitSpike << spikeIn.translateWith {
@@ -279,9 +274,8 @@ class SpikeCacheManager extends Component {
         }
       }
       .onExit{
-        when(allocateFailed){
+        when(!allocateFailed){
           spikeCnt.increment()
-        }otherwise{
           tagLockUpdate(
             bus = tagBus(folder.wayLow),
             address = spikeIn.setIndex() @@ folder.step,
@@ -298,17 +292,17 @@ class SpikeCacheManager extends Component {
     val spikeFree = new State
     val flush = new StateFsm(flushFsm)
 
-    def stateChange(): Unit ={
+    idle.whenIsActive {
       when(io.synapseEventDone.valid) {
         goto(spikeFree)
       } elsewhen io.spikeIn.valid {
         goto(spikeAllocate)
       } elsewhen io.flush.valid {
         goto(flush)
-      } otherwise {
-        goto(idle)
       }
     }
+
+    Seq(spikeAllocate, flush).foreach(s => s.whenCompleted(goto(idle)))
 
     spikeFree
       .whenIsActive{

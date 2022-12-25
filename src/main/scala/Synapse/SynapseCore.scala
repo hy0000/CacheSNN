@@ -95,8 +95,12 @@ class SpikeEvent extends Spike {
   // TODO: if it's needed to add virtual spike, need change PreSpikeFetch logic
   // val virtual = Bool()
 
-  def cacheWayLow: UInt = cacheLineAddr(log2Up(CacheConfig.wayCountPerStep)-1 downto 0)
-  def cacheTagAddress: UInt = cacheLineAddr(cacheLineAddr.high downto log2Up(CacheConfig.wayCountPerStep))
+  def cacheWayLow: UInt = {
+    cacheLineAddr(log2Up(CacheConfig.wayCountPerStep)-1 downto 0)
+  }
+  def cacheTagAddress: UInt = {
+    cacheLineAddr(cacheLineAddr.high downto log2Up(CacheConfig.wayCountPerStep))
+  }
 }
 
 class ExpLutQuery extends Bundle with IMasterSlave {
