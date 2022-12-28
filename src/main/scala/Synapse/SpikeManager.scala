@@ -184,15 +184,25 @@ class SpikeCacheManager extends Component {
   }
 
   case class Folder() extends Bundle {
+
     val hit = Bool()
     val replace = Bool()
     val available = Bool()
     val step = UInt(log2Up(CacheConfig.steps) bits)
     val wayLow = UInt(log2Up(CacheConfig.wayCountPerStep) bits)
     val tag = UInt(CacheConfig.tagWidth bits)
+    val timeDiff = UInt(CacheConfig.tagTimestampWidth bits)
 
     def way: UInt = step @@ wayLow
-    def priority: UInt = (hit ## available ## replace).asUInt
+    def priority: UInt = {
+      val basePriority = hit ## available ## replace
+      val priority = basePriority ## timeDiff.getZero
+      when(basePriority=/=0){
+        priority := basePriority ## timeDiff
+      }
+      priority.asUInt
+    }
+    def allocateFailed: Bool = !hit && !available && !replace
   }
 
   val spikeAllocateFsm = new StateMachine {
@@ -205,43 +215,30 @@ class SpikeCacheManager extends Component {
     val spikeIn = io.spikeIn
     val tags = Vec(tagBus.map(_.rData))
 
-    val hitOh = tags.map(t => t.tag===spikeIn.tag() && t.valid)
-    val hit = hitOh.orR
-    val hitWay = OHToUInt(OHMasking.first(hitOh))
+    val currentFolders = tags.zipWithIndex.map{ case( t, wayLow) =>
+      val replaceLastWay = stepDelay===(CacheConfig.steps - 1) && !tags.last.locked && Bool(wayLow==(CacheConfig.wayCountPerStep-1))
+      val ret = Folder()
+      ret.timeDiff := io.csr.timestamp - t.timeStamp
+      ret.hit := t.valid && spikeIn.tag()===t.tag
+      ret.replace := t.valid && (ret.timeDiff > io.csr.refractory || replaceLastWay)
+      ret.available := !t.valid
+      ret.step := stepDelay
+      ret.tag := t.tag
+      ret.wayLow := wayLow
+      ret
+    }
 
-    val availableOh = tags.map(!_.valid)
-    val available = availableOh.orR
-    val availableWay =  OHToUInt(OHMasking.first(availableOh))
-
-    val replacesOh = tags.map(t => t.valid && (io.csr.timestamp - t.timeStamp) > io.csr.refractory)
-    val replace = replacesOh.orR
-    val replaceWay = OHToUInt(OHMasking.first(replacesOh))
-
-    val replaceLastWay = stepDelay===(CacheConfig.steps - 1) && !tags.last.locked
-
-    val currentFolder = Folder()
-    currentFolder.hit := False
-    currentFolder.replace := False
-    currentFolder.available := False
-    currentFolder.wayLow := 0
-    currentFolder.step := stepDelay
-    currentFolder.tag := tags(currentFolder.wayLow).tag
-    when(hit){
-      currentFolder.wayLow := hitWay
-      currentFolder.hit := True
-    }elsewhen available {
-      currentFolder.wayLow := availableWay
-      currentFolder.available := True
-    }elsewhen replace {
-      currentFolder.wayLow := replaceWay
-      currentFolder.replace := True
-    }elsewhen replaceLastWay {
-      currentFolder.wayLow := CacheConfig.wayCountPerStep - 1
-      currentFolder.replace := True
+    val currentFolder = currentFolders.reduceBalancedTree{ (f0, f1) =>
+      val ret = Folder()
+      when(f0.priority >= f1.priority){
+        ret := f0
+      }otherwise{
+        ret := f1
+      }
+      ret
     }
 
     val folder = Folder() setAsReg()
-    val allocateFailed = folder.priority===0 && tags.last.locked
 
     def fsmExitOrContinue(doneCond:Bool): Unit ={
       when(doneCond){
@@ -282,7 +279,7 @@ class SpikeCacheManager extends Component {
       }
     allocate
       .whenIsActive{
-        when(allocateFailed){
+        when(folder.allocateFailed){
           // process fail spike
           io.failSpike << spikeIn
           fsmExitOrContinue(io.failSpike.ready)
@@ -314,7 +311,7 @@ class SpikeCacheManager extends Component {
         }
       }
       .onExit{
-        when(!allocateFailed){
+        when(!folder.allocateFailed){
           spikeCnt.increment()
           tagLockUpdate(
             bus = tagBus(folder.wayLow),

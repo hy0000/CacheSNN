@@ -49,6 +49,10 @@ class SpikeCacheManagerAgent(dut:SpikeCacheManager) {
     def nid(setIndex:Int): Int = {
       (tag<<CacheConfig.setIndexRange.size) | setIndex
     }
+
+    override def toString = {
+      s"valid:$valid-locked:$locked-tag:${tag.toHexString}-t:$timestamp"
+    }
   }
 
   def currentTime:Int = dut.io.csr.timestamp.toInt
@@ -137,29 +141,40 @@ class SpikeCacheManagerAgent(dut:SpikeCacheManager) {
 
     if(!hit && !compulsory){
       val timestampUpBound = 1<<CacheConfig.tagTimestampWidth
+      var replaceNid, replaceWay, timestampDiff = 0
+
       for ((t, way) <- tagSet.zipWithIndex) {
-        val isLastWay = way == CacheConfig.ways - 1
-        val oldTimestamp = t.timestamp
-        val inRefractory = (dut.io.csr.timestamp.toInt + timestampUpBound - oldTimestamp) % timestampUpBound <= dut.io.csr.refractory.toInt
-        val replaceValid = !t.locked && (isLastWay || !inRefractory)
-        if (replaceValid && !replace) {
+        val replaceLastWayValid = way == CacheConfig.ways - 1 && !t.locked
+        val thisTimestampDiff = (dut.io.csr.timestamp.toInt + timestampUpBound - t.timestamp) % timestampUpBound
+        val inRefractory = thisTimestampDiff <= dut.io.csr.refractory.toInt
+        val replaceValid = !t.locked && !inRefractory && thisTimestampDiff > timestampDiff
+        if (replaceValid || (!replace && replaceLastWayValid)) {
           replace = true
-          val replaceNid = t.nid(setIndex)
-          t.tag = tag
-          t.timestamp = currentTime
-          t.locked = true
-          t.valid = true
-          val missSpike = new MissSpikeSim(
-            nid = nid,
-            cacheAddr = genCacheAddress(setIndex, way),
-            replaceNid = replaceNid,
-            action = if(dut.io.csr.learning.toBoolean) MissAction.REPLACE else MissAction.OVERRIDE
-          )
-          if(printState){
-            println(s"$nid replace $replaceNid at way $way timestamp $oldTimestamp")
-          }
-          missQueue.enqueue(missSpike)
+          replaceNid = t.nid(setIndex)
+          replaceWay = way
+          timestampDiff = thisTimestampDiff
         }
+      }
+
+      if(replace){
+        val t = tagSet(replaceWay)
+        val oldTimestamp = t.timestamp
+        t.tag = tag
+        t.timestamp = currentTime
+        t.locked = true
+        t.valid = true
+        val missSpike = new MissSpikeSim(
+          nid = nid,
+          cacheAddr = genCacheAddress(setIndex, replaceWay),
+          replaceNid = replaceNid,
+          action = if (dut.io.csr.learning.toBoolean) MissAction.REPLACE else MissAction.OVERRIDE
+        )
+        if (printState) {
+          println(s"$nid replace $replaceNid at way $replaceWay timestamp $oldTimestamp")
+        }
+        missQueue.enqueue(missSpike)
+      }else{
+        //tagSet.foreach(t => println(t.toString))
       }
     }
 
@@ -298,6 +313,30 @@ class SpikeCacheManagerTest extends AnyFunSuite {
       dut.io.csr.timestamp #= 1 // in refractory lock
       val missSpike = spike.map(s => new SpikeSim(nid = s.nid + 0xF000))
       agent.sendSpike(missSpike)
+      agent.waitDone()
+    }
+  }
+
+  test("replace LRU test") {
+    complied.doSim { dut =>
+      val spike = (0 until CacheConfig.lines).map(nid => new SpikeSim(nid))
+      val t1HitSpike = spike.take(CacheConfig.setSize) ++ spike.drop(CacheConfig.lines - CacheConfig.setSize)
+      val spikeForReplace = spike.slice(CacheConfig.setSize, CacheConfig.setSize + CacheConfig.lines - t1HitSpike.length)
+      val t3ReplaceSpike = spikeForReplace.map(s => new SpikeSim(nid = s.nid + 0xF000))
+      val agent = initDutWithSpike(dut, spike)
+
+      dut.io.csr.timestamp #= 1
+      agent.sendSpike(t1HitSpike)
+      agent.waitDone()
+
+      dut.io.csr.timestamp #= 3
+      agent.sendSpike(t3ReplaceSpike)
+
+      for (s <- spikeForReplace) {
+        dut.clockDomain.waitSamplingWhere(dut.io.missSpike.valid.toBoolean && dut.io.missSpike.ready.toBoolean)
+        assert(dut.io.missSpike.replaceNid.toInt === s.nid)
+      }
+
       agent.waitDone()
     }
   }
