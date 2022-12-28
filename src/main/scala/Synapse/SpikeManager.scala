@@ -3,6 +3,7 @@ package Synapse
 import CacheSNN.AER
 import Util.{MemAccessBus, Misc}
 import spinal.core._
+import spinal.core.sim.SimMemPimper
 import spinal.lib._
 import spinal.lib.bus.bram.{BRAM, BRAMConfig}
 import spinal.lib.fsm._
@@ -43,9 +44,15 @@ class SpikeManager extends Component {
   io.synapseEventDone >> spikeCacheManager.io.synapseEventDone
 }
 
+object MissAction extends SpinalEnum {
+  val OVERRIDE = newElement("override")
+  val REPLACE = newElement("replace")
+  val WRITE_BACK = newElement("write_back")
+}
+
 case class MissSpike() extends SpikeEvent {
   val replaceNid = cloneOf(nid)
-  val writeBackOnly = Bool()
+  val action: MissAction.C = MissAction()
 }
 
 class SpikeCacheManager extends Component {
@@ -114,9 +121,24 @@ class SpikeCacheManager extends Component {
     val setIndex = cnt(CacheConfig.setIndexRange.high + step.getWidth downto step.getWidth)
     val tagArraySel = cnt(cnt.high downto step.getWidth + setIndex.getWidth)
     val bus = tagBus(tagArraySel)
-    val r = new State with EntryPoint
-    val w = new State
+    val start = new State with EntryPoint
+    val r, w = new State
+    val wOnly = new State
 
+    def tagClear(): Unit ={
+      bus.valid := True
+      bus.write := True
+      bus.address := cnt.value.resized
+      bus.wData := TagItem().getZero
+    }
+
+    start.whenIsActive {
+      when(io.csr.learning) {
+        goto(r)
+      } otherwise {
+        goto(wOnly)
+      }
+    }
     r.whenIsActive{
       bus.valid := True
       bus.write := False
@@ -124,14 +146,12 @@ class SpikeCacheManager extends Component {
       goto(w)
     }
     w.whenIsActive{
-      bus.valid := True
-      bus.write := True
-      bus.address := cnt.value.resized
-      bus.wData := TagItem().getZero
+      tagClear()
       when(bus.rData.valid){
-        io.missSpike.valid := io.csr.learning
+        io.missSpike.valid := True
         io.missSpike.nid := 0
         io.missSpike.replaceNid := bus.rData.tag @@ setIndex
+        io.missSpike.action := MissAction.WRITE_BACK
       }
       when(io.missSpike.ready) {
         cnt.increment()
@@ -141,6 +161,14 @@ class SpikeCacheManager extends Component {
         }otherwise{
           goto(r)
         }
+      }
+    }
+    wOnly.whenIsActive {
+      tagClear()
+      cnt.increment()
+      when(cnt.willOverflow) {
+        io.flush.ready := True
+        exitFsm()
       }
     }
   }
@@ -161,6 +189,7 @@ class SpikeCacheManager extends Component {
     val available = Bool()
     val step = UInt(log2Up(CacheConfig.steps) bits)
     val wayLow = UInt(log2Up(CacheConfig.wayCountPerStep) bits)
+    val tag = UInt(CacheConfig.tagWidth bits)
 
     def way: UInt = step @@ wayLow
     def priority: UInt = (hit ## available ## replace).asUInt
@@ -188,12 +217,15 @@ class SpikeCacheManager extends Component {
     val replace = replacesOh.orR
     val replaceWay = OHToUInt(OHMasking.first(replacesOh))
 
+    val replaceLastWay = stepDelay===(CacheConfig.steps - 1) && !tags.last.locked
+
     val currentFolder = Folder()
     currentFolder.hit := False
     currentFolder.replace := False
     currentFolder.available := False
-    currentFolder.wayLow := CacheConfig.wayCountPerStep-1
+    currentFolder.wayLow := 0
     currentFolder.step := stepDelay
+    currentFolder.tag := tags(currentFolder.wayLow).tag
     when(hit){
       currentFolder.wayLow := hitWay
       currentFolder.hit := True
@@ -202,6 +234,9 @@ class SpikeCacheManager extends Component {
       currentFolder.available := True
     }elsewhen replace {
       currentFolder.wayLow := replaceWay
+      currentFolder.replace := True
+    }elsewhen replaceLastWay {
+      currentFolder.wayLow := CacheConfig.wayCountPerStep - 1
       currentFolder.replace := True
     }
 
@@ -266,8 +301,13 @@ class SpikeCacheManager extends Component {
             val ret = new MissSpike
             ret.assignSomeByName(spikeIn.payload)
             ret.cacheLineAddr := spikeIn.setIndex() @@ folder.way
-            ret.replaceNid := tags(folder.wayLow).tag @@ spikeIn.setIndex()
-            ret.writeBackOnly := False
+            when(io.csr.learning && folder.replace){
+              ret.action := MissAction.REPLACE
+              ret.replaceNid := folder.tag @@ spikeIn.setIndex()
+            } otherwise {
+              ret.action := MissAction.OVERRIDE
+              ret.replaceNid := 0
+            }
             ret
           }
           fsmExitOrContinue(io.missSpike.ready)

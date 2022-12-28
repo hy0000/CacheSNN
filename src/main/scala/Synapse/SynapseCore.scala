@@ -69,7 +69,8 @@ object CacheConfig {
   val wordAddrWidth = log2Up(size / 8)
   val wordOffsetWidth = log2Up(size / lines / 8)
   val tagTimestampWidth = 2
-  val setIndexRange = log2Up(lines / ways) - 1 downto 0
+  val setSize = lines / ways
+  val setIndexRange = log2Up(setSize) - 1 downto 0
   val tagWidth = AER.nidWidth - setIndexRange.size
   val wayCountPerStep = 2
   val steps = ways / wayCountPerStep
