@@ -166,7 +166,7 @@ class SpikeCacheManagerAgent(dut:SpikeCacheManager) {
         val missSpike = new MissSpikeSim(
           nid = nid,
           cacheAddr = genCacheAddress(setIndex, replaceWay),
-          replaceNid = replaceNid,
+          replaceNid = if (dut.io.csr.learning.toBoolean) replaceNid else 0,
           action = if (dut.io.csr.learning.toBoolean) MissAction.REPLACE else MissAction.OVERRIDE
         )
         if (printState) {
@@ -344,6 +344,7 @@ class SpikeCacheManagerTest extends AnyFunSuite {
   test("random test"){
     complied.doSim { dut =>
       val agent = initDut(dut)
+      dut.io.csr.learning #= Random.nextBoolean()
       val nidBase = Random.nextInt(0xF000)
       val spike = (0 until CacheConfig.lines * 10).map(nid => new SpikeSim(nidBase + nid))
 
