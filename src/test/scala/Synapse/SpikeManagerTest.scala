@@ -357,3 +357,26 @@ class SpikeCacheManagerTest extends AnyFunSuite {
     }
   }
 }
+
+class MissSpikeManagerTest extends AnyFunSuite {
+  val complied = simConfig.compile(new MissSpikeManager)
+
+  def initDut(dut:MissSpikeManager): Unit ={
+    dut.clockDomain.forkStimulus(2)
+    SimTimeout(100000)
+    dut.io.len #= 127
+
+  }
+
+  test("overwrite test") {
+
+  }
+
+  test("write back only test"){
+
+  }
+
+  test("replace test"){
+
+  }
+}
