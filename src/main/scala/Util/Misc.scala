@@ -5,7 +5,7 @@ import spinal.core._
 object Misc {
   def clearIO(io:Bundle): Unit ={
     io.flattenForeach { bt =>
-      if (bt.isOutput) {
+      if (bt.isOutput && !bt.hasAssignement) {
         bt := bt.getZero
       }
     }

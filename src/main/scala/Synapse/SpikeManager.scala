@@ -364,34 +364,109 @@ class MissSpikeManager extends Component {
     val missSpike = slave(Stream(MissSpike()))
     val readySpike = master(Stream(new SpikeEvent))
     val free = out Bool()
+    val len = in UInt(8 bits)
   }
 
-  val outstanding = 2
-  val spikeBuffer = Vec(Flow(new SpikeEvent), outstanding) setAsReg()
-  spikeBuffer.foreach(_.valid init False)
-  val spikeBufferOccupancy = CountOne(spikeBuffer.map(_.valid))
+  val spikeQueue = StreamFifo(new SpikeEvent, 2)
+  spikeQueue.io.push.valid := False
+  spikeQueue.io.push.payload := io.missSpike.payload.asInstanceOf[SpikeEvent]
+  spikeQueue.io.pop.ready := False
 
-  io.dataIn.ready := False
-  io.dataOut.valid := False
-  io.bus.cmd.valid := False
-  io.missSpike.ready := False
-  io.readySpike.valid := False
+  io.bus.cmd.len := io.len
+  io.free := spikeQueue.io.occupancy===0
+  Misc.clearIO(io)
+
+  val cacheLineAddrOffset = log2Up(CacheConfig.size / CacheConfig.lines)
 
   val fsm = new StateMachine {
     val idle = makeInstantEntry()
-    val writeBack = new State
-    val fill = new State
+    val decodeMissSpike = new State
+    val pushSpike, popSpike = new State
+    val cacheWrite = new State
+    val dataHead, dataBody = new State
 
     idle
       .whenIsActive{
-
+        when(spikeQueue.io.push.ready && io.missSpike.valid){
+          goto(decodeMissSpike)
+        }elsewhen io.dataIn.valid {
+          io.dataIn.ready := True
+          goto(cacheWrite)
+        }
       }
-      .whenIsActive{
-        goto(fill)
-      }
-    fill
-      .whenIsActive{
 
+    decodeMissSpike
+      .whenIsActive{
+        val address = io.missSpike.cacheLineAddr<<cacheLineAddrOffset
+        when(io.missSpike.action===MissAction.OVERRIDE) {
+          goto(dataHead)
+        }otherwise{
+          io.bus.cmd.valid := True
+          io.bus.cmd.write := False
+          io.bus.cmd.address := address.resized
+          when(io.bus.cmd.ready) {
+            goto(pushSpike)
+          }
+        }
+      }
+
+    pushSpike
+      .whenIsActive {
+        spikeQueue.io.push.valid := True
+        goto(dataHead)
+      }
+
+    dataHead
+      .whenIsActive {
+        val nid = cloneOf(io.missSpike.nid)
+        when(io.missSpike.action === MissAction.REPLACE) {
+          nid := io.missSpike.replaceNid
+        }otherwise{
+          nid := io.missSpike.nid
+        }
+        io.dataOut.valid := True
+        io.dataOut.setHeadField(nid, io.len)
+        when(io.dataOut.ready) {
+          when(io.missSpike.action === MissAction.OVERRIDE){
+            io.missSpike.ready := True
+            goto(idle)
+          }otherwise{
+            goto(dataBody)
+          }
+        }
+      }
+
+    dataBody
+      .whenIsActive{
+        io.dataOut.valid := io.bus.rsp.valid
+        io.dataOut.data := io.bus.rsp.payload
+        io.bus.rsp.ready := io.dataOut.ready
+        when(io.bus.rsp.lastFire){
+          when(io.missSpike.action =/= MissAction.OVERRIDE) {
+            io.missSpike.ready := True
+          }
+          goto(idle)
+        }
+      }
+
+    cacheWrite
+      .whenIsActive {
+        val address = spikeQueue.io.pop.cacheLineAddr << cacheLineAddrOffset
+        io.bus.cmd.len := io.len
+        io.bus.cmd.address := address.resized
+        io.bus.cmd.valid := True
+        io.bus.cmd.write := True
+        io.bus.cmd.data := io.dataIn.data.fragment
+        io.dataIn.ready := io.bus.cmd.ready
+        when(io.dataIn.data.last && io.dataIn.fire) {
+          goto(popSpike)
+        }
+      }
+
+    popSpike
+      .whenIsActive {
+        spikeQueue.io.pop.ready := True
+        goto(idle)
       }
   }
 }
