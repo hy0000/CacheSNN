@@ -2,6 +2,7 @@ package Synapse
 
 import CacheSNN.CacheSnnTest._
 import Util.MemWriteCmd
+import Util.sim.NumberTool._
 import breeze.linalg._
 import breeze.plot._
 import org.scalatest.funsuite.AnyFunSuite
