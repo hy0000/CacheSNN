@@ -1,6 +1,6 @@
 package Synapse
 
-import CacheSNN.AER
+import CacheSNN.{AER, AerPacket}
 import Util.{MemAccessBus, Misc}
 import spinal.core._
 import spinal.core.sim.SimMemPimper
@@ -14,8 +14,8 @@ class SpikeManager extends Component {
     val spike = slave(Stream(new Spike))
     val spikeEvent = master(Stream(new SpikeEvent))
     val bus = master(MemAccessBus(SynapseCore.memAccessBusConfig))
-    val dataFill = master(Stream(new SynapseData))
-    val dataWriteBack = master(Stream(new SynapseData))
+    val aerIn = slave(new AerPacket)
+    val aerOut = master(new AerPacket)
     val synapseEventDone = slave(Stream(new SpikeEvent))
     val flush = slave(Event)
     val free = out Bool()
@@ -39,8 +39,8 @@ class SpikeManager extends Component {
     .on(Seq(readyQueue.io.pop, hitQueue.io.pop))
 
   missManager.io.bus <> io.bus
-  missManager.io.dataIn << io.dataFill
-  missManager.io.dataOut >> io.dataWriteBack
+  missManager.io.aerIn <> io.aerIn
+  missManager.io.aerOut <> io.aerOut
   io.synapseEventDone >> spikeCacheManager.io.synapseEventDone
 }
 
@@ -358,8 +358,8 @@ class SpikeCacheManager extends Component {
 
 class MissSpikeManager extends Component {
   val io = new Bundle {
-    val dataIn = slave(Stream(new SynapseData))
-    val dataOut = master(Stream(new SynapseData)) // data out will keep ready until a full trans done
+    val aerIn = slave(new AerPacket)
+    val aerOut = master(new AerPacket)
     val bus = master(MemAccessBus(SynapseCore.memAccessBusConfig))
     val missSpike = slave(Stream(MissSpike()))
     val readySpike = master(Stream(new SpikeEvent))
@@ -373,7 +373,6 @@ class MissSpikeManager extends Component {
   spikeQueue.io.pop.ready := False
 
   io.bus.cmd.len := io.len
-  io.free := spikeQueue.io.occupancy===0
   Misc.clearIO(io)
 
   val cacheLineAddrOffset = log2Up(CacheConfig.size / CacheConfig.lines)
@@ -383,29 +382,69 @@ class MissSpikeManager extends Component {
     val decodeMissSpike = new State
     val pushSpike, popSpike = new State
     val cacheWrite = new State
-    val dataHead, dataBody = new State
+    val dataHeadFetch, dataHeadWb, dataBody = new State
 
     idle
       .whenIsActive{
         when(spikeQueue.io.push.ready && io.missSpike.valid){
           goto(decodeMissSpike)
-        }elsewhen io.dataIn.valid {
-          io.dataIn.ready := True
+        }elsewhen io.aerIn.head.valid {
+          io.aerIn.head.ready := True // only support inorder aer rsp
           goto(cacheWrite)
+        }otherwise{
+          io.free := spikeQueue.io.occupancy===0
         }
       }
 
     decodeMissSpike
       .whenIsActive{
-        val address = io.missSpike.cacheLineAddr<<cacheLineAddrOffset
-        when(io.missSpike.action===MissAction.OVERRIDE) {
-          goto(dataHead)
+        when(io.missSpike.action === MissAction.OVERRIDE) {
+          goto(dataHeadFetch)
         }otherwise{
+          val address = io.missSpike.cacheLineAddr << cacheLineAddrOffset
           io.bus.cmd.valid := True
           io.bus.cmd.write := False
           io.bus.cmd.address := address.resized
           when(io.bus.cmd.ready) {
-            goto(pushSpike)
+            goto(dataHeadWb)
+          }
+        }
+      }
+
+    dataHeadFetch
+      .whenIsActive{
+        io.aerOut.head.valid := True
+        io.aerOut.head.eventType := AER.TYPE.W_FETCH
+        io.aerOut.head.nid := io.missSpike.nid
+        when(io.aerOut.head.ready){
+          goto(pushSpike)
+        }
+      }
+
+    dataHeadWb
+      .whenIsActive {
+        io.aerOut.head.valid := True
+        io.aerOut.head.eventType := AER.TYPE.W_WRITE
+        when(io.missSpike.action === MissAction.WRITE_BACK){
+          io.aerOut.head.nid := io.missSpike.nid
+        }otherwise{ // replace action
+          io.aerOut.head.nid := io.missSpike.replaceNid
+        }
+
+        when(io.aerOut.head.ready) {
+          goto(dataBody)
+        }
+      }
+
+    dataBody
+      .whenIsActive{
+        io.aerOut.body << io.bus.rsp
+        when(io.bus.rsp.lastFire){
+          when(io.missSpike.action === MissAction.WRITE_BACK) {
+            io.missSpike.ready := True
+            goto(idle)
+          }otherwise{
+            goto(dataHeadFetch)
           }
         }
       }
@@ -413,40 +452,8 @@ class MissSpikeManager extends Component {
     pushSpike
       .whenIsActive {
         spikeQueue.io.push.valid := True
-        goto(dataHead)
-      }
-
-    dataHead
-      .whenIsActive {
-        val nid = cloneOf(io.missSpike.nid)
-        when(io.missSpike.action === MissAction.REPLACE) {
-          nid := io.missSpike.replaceNid
-        }otherwise{
-          nid := io.missSpike.nid
-        }
-        io.dataOut.valid := True
-        io.dataOut.setHeadField(nid, io.len)
-        when(io.dataOut.ready) {
-          when(io.missSpike.action === MissAction.OVERRIDE){
-            io.missSpike.ready := True
-            goto(idle)
-          }otherwise{
-            goto(dataBody)
-          }
-        }
-      }
-
-    dataBody
-      .whenIsActive{
-        io.dataOut.valid := io.bus.rsp.valid
-        io.dataOut.data := io.bus.rsp.payload
-        io.bus.rsp.ready := io.dataOut.ready
-        when(io.bus.rsp.lastFire){
-          when(io.missSpike.action =/= MissAction.OVERRIDE) {
-            io.missSpike.ready := True
-          }
-          goto(idle)
-        }
+        io.missSpike.ready := True
+        goto(idle)
       }
 
     cacheWrite
@@ -456,17 +463,19 @@ class MissSpikeManager extends Component {
         io.bus.cmd.address := address.resized
         io.bus.cmd.valid := True
         io.bus.cmd.write := True
-        io.bus.cmd.data := io.dataIn.data.fragment
-        io.dataIn.ready := io.bus.cmd.ready
-        when(io.dataIn.data.last && io.dataIn.fire) {
+        io.bus.cmd.data := io.aerIn.body.fragment
+        io.aerIn.body.ready := io.bus.cmd.ready
+        when(io.aerIn.body.lastFire) {
           goto(popSpike)
         }
       }
 
     popSpike
       .whenIsActive {
-        spikeQueue.io.pop.ready := True
-        goto(idle)
+        io.readySpike << spikeQueue.io.pop
+        when(spikeQueue.io.pop.fire){
+          goto(idle)
+        }
       }
   }
 }

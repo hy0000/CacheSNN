@@ -1,6 +1,9 @@
 package Synapse
 
+import CacheSNN.AER
 import CacheSNN.CacheSnnTest._
+import CacheSNN.sim.{AerDriver, AerMonitor, AerPacketSim}
+import Util.sim.MemAccessBusMemSlave
 import org.scalatest.funsuite.AnyFunSuite
 import spinal.core.sim._
 import spinal.lib.sim.{StreamDriver, StreamMonitor, StreamReadyRandomizer}
@@ -19,12 +22,25 @@ class SpikeSim(val nid: Int){
 }
 
 class SpikeEventSim(nid: Int,
-                    val cacheAddr: Int) extends SpikeSim(nid)
+                    val cacheAddr: Int) extends SpikeSim(nid){
+
+  def assertEqual(sPort: SpikeEvent): Unit = {
+    assert(sPort.nid.toInt == nid)
+    assert(sPort.cacheLineAddr.toInt == cacheAddr)
+  }
+}
 
 class MissSpikeSim(nid: Int,
                    cacheAddr: Int,
                    val replaceNid: Int,
-                   val action: MissAction.E) extends SpikeEventSim(nid, cacheAddr)
+                   val action: MissAction.E) extends SpikeEventSim(nid, cacheAddr){
+
+  def assertEqual(sPort: MissSpike): Unit = {
+    assertEqual(sPort.asInstanceOf[SpikeEvent])
+    assert(sPort.replaceNid.toInt == replaceNid, s"${sPort.replaceNid.toInt} ${replaceNid} at nid ${nid}")
+    assert(sPort.action.toEnum == action, s"${sPort.action.toEnum} ${action}")
+  }
+}
 
 class SpikeCacheManagerAgent(dut:SpikeCacheManager) {
   val printState = false
@@ -199,10 +215,7 @@ class SpikeCacheManagerAgent(dut:SpikeCacheManager) {
 
   StreamMonitor(dut.io.missSpike, dut.clockDomain) { s =>
     val missSpike = missQueue.dequeue()
-    assert(s.nid.toInt == missSpike.nid, s"${s.nid.toInt} ${missSpike.nid}")
-    assert(s.replaceNid.toInt == missSpike.replaceNid, s"${s.replaceNid.toInt} ${missSpike.replaceNid} at nid ${missSpike.nid}")
-    assert(s.cacheLineAddr.toInt == missSpike.cacheAddr)
-    assert(s.action.toEnum == missSpike.action, s"${s.action.toEnum} ${missSpike.action}")
+    missSpike.assertEqual(dut.io.missSpike)
     if(!dut.io.flush.valid.toBoolean){
       doneQueue.enqueue(missSpike.asInstanceOf[SpikeEventSim])
     }
@@ -210,8 +223,7 @@ class SpikeCacheManagerAgent(dut:SpikeCacheManager) {
 
   StreamMonitor(dut.io.hitSpike, dut.clockDomain) { s =>
     val hitSpike = hitQueue.dequeue()
-    assert(s.nid.toInt == hitSpike.nid)
-    assert(s.cacheLineAddr.toInt == hitSpike.cacheAddr)
+    hitSpike.assertEqual(dut.io.hitSpike)
     doneQueue.enqueue(hitSpike)
   }
 
@@ -358,25 +370,124 @@ class SpikeCacheManagerTest extends AnyFunSuite {
   }
 }
 
+class MissSpikeManagerAgent(dut:MissSpikeManager) {
+  val (missSpikeDriver, missSpikeQueue) = StreamDriver.queue(dut.io.missSpike, dut.clockDomain)
+  val cache = MemAccessBusMemSlave(dut.io.bus, dut.clockDomain, 3)
+  val readySpikeQueue = mutable.Queue[SpikeEventSim]()
+  val aerFetchedQueue = mutable.Queue[AerPacketSim]()
+
+  StreamReadyRandomizer(dut.io.readySpike, dut.clockDomain)
+  StreamReadyRandomizer(dut.io.aerOut.head, dut.clockDomain)
+  StreamReadyRandomizer(dut.io.aerOut.body, dut.clockDomain)
+  dut.io.readySpike.ready #= true
+  dut.io.aerOut.head.ready #= true
+  dut.io.aerOut.body.ready #= true
+
+  StreamMonitor(dut.io.readySpike, dut.clockDomain){sPort =>
+    val readySpike = readySpikeQueue.dequeue()
+    readySpike.assertEqual(sPort)
+  }
+
+  val aerDriver = AerDriver(dut.io.aerIn, dut.clockDomain)
+  val aerMonitor = AerMonitor(dut.io.aerOut, dut.clockDomain)
+
+  StreamMonitor(dut.io.missSpike, dut.clockDomain){ missSpike =>
+    if(missSpike.action.toEnum!=MissAction.WRITE_BACK){
+      val p = aerFetchedQueue.dequeue()
+      aerDriver.sendPacket(p)
+    }
+  }
+
+  def sendSpike(spike:Seq[MissSpikeSim]): Unit ={
+    for(s <- spike) {
+      missSpikeQueue.enqueue{port =>
+        port.action #= s.action
+        port.nid #= s.nid
+        port.replaceNid #= s.replaceNid
+        port.cacheLineAddr #= s.cacheAddr
+      }
+
+      if (s.action != MissAction.OVERRIDE) {
+        // read data form cache
+        val addrBase = s.cacheAddr << dut.cacheLineAddrOffset
+        val data64 = (0 to dut.io.len.toInt).map { lineOffset =>
+          val addr = addrBase | (lineOffset << 3)
+          cache.mem.readBigInt(addr, 8)
+        }
+        val nid = if (s.action == MissAction.REPLACE) s.replaceNid else s.nid
+        val aerWbPacket = AerPacketSim(0, 0, 0, AER.TYPE.W_WRITE, nid, data64)
+        aerMonitor.addPacket(aerWbPacket)
+      }
+      if(s.action != MissAction.WRITE_BACK){
+        val aerFetchPacket = AerPacketSim(0, 0, 0, AER.TYPE.W_FETCH, s.nid, Seq())
+        aerMonitor.addPacket(aerFetchPacket)
+        readySpikeQueue.enqueue(s.asInstanceOf[SpikeEventSim])
+        val fetchedPacket = aerFetchPacket.copy(
+          eventType = AER.TYPE.W_WRITE ,
+          data = Seq.fill(128)(BigInt(randomUIntN(20)))
+        )
+        aerFetchedQueue.enqueue(fetchedPacket)
+      }
+    }
+  }
+
+  def waiteDone(): Unit ={
+    dut.clockDomain.waitSamplingWhere(missSpikeQueue.isEmpty)
+    dut.clockDomain.waitSamplingWhere(dut.io.free.toBoolean)
+  }
+}
+
 class MissSpikeManagerTest extends AnyFunSuite {
   val complied = simConfig.compile(new MissSpikeManager)
 
-  def initDut(dut:MissSpikeManager): Unit ={
-    dut.clockDomain.forkStimulus(2)
-    SimTimeout(100000)
-    dut.io.len #= 127
+  def seqMissSpikeGen(action: MissAction.E): Seq[MissSpikeSim] = {
+    (0 until CacheConfig.lines).map { nid =>
+      new MissSpikeSim(
+        nid = nid,
+        cacheAddr = nid,
+        replaceNid = nid + 0xF000,
+        action = action
+      )
+    }
+  }
 
+  def initDut(dut: MissSpikeManager): MissSpikeManagerAgent = {
+    dut.clockDomain.forkStimulus(2)
+    SimTimeout(1000000)
+    dut.io.len #= 127
+    new MissSpikeManagerAgent(dut)
+  }
+
+  def initWithSpike(dut: MissSpikeManager): MissSpikeManagerAgent = {
+    val agent = initDut(dut)
+    val initSpike = seqMissSpikeGen(MissAction.OVERRIDE)
+    agent.sendSpike(initSpike)
+    dut.clockDomain.waitSamplingWhere(dut.io.missSpike.ready.toBoolean && dut.io.missSpike.valid.toBoolean)
+    agent.waiteDone()
+    agent
   }
 
   test("overwrite test") {
-
+    complied.doSim { dut =>
+      initWithSpike(dut)
+    }
   }
 
   test("write back only test"){
-
+    complied.doSim { dut =>
+      val agent = initWithSpike(dut)
+      val wbSpike = seqMissSpikeGen(MissAction.WRITE_BACK)
+      agent.sendSpike(wbSpike)
+      agent.waiteDone()
+    }
   }
 
   test("replace test"){
-
+    complied.doSim {dut =>
+      val agent = initWithSpike(dut)
+      val replaceSpike = seqMissSpikeGen(MissAction.REPLACE)
+      agent.sendSpike(replaceSpike)
+      agent.waiteDone()
+    }
   }
 }

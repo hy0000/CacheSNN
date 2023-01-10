@@ -18,19 +18,6 @@ class SynapseCtrl extends Component {
   stub()
 }
 
-class SynapseData extends Bundle {
-  val data = Fragment(Bits(SynapseCore.busDataWidth bits))
-
-  def lenFieldRange = 7 downto 0
-  def nidFieldRange = lenFieldRange.high + AER.nidWidth downto lenFieldRange.high + 1
-  def getLen = data(lenFieldRange).asUInt
-  def getNid = data(nidFieldRange).asUInt
-  def setHeadField(nid:UInt, len: UInt): Unit ={
-    data(lenFieldRange) := len.asBits
-    data(nidFieldRange) := nid.asBits
-  }
-}
-
 class SpikeShifter extends Component {
   val io = new Bundle {
     val run = slave(Event) // valid start ready done

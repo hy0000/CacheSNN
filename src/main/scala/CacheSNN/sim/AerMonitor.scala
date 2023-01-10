@@ -14,7 +14,7 @@ case class AerMonitor(aer:AerPacket, clockDomain: ClockDomain) {
 
   StreamMonitor(aer.head, clockDomain){head =>
     val p = packetQueue.dequeue()
-    assert(head.nid.toInt==p.nid)
+    assert(head.nid.toInt==p.nid, s"${head.nid.toInt} ${p.nid}")
     assert(head.eventType.toEnum==p.eventType)
   }
 
