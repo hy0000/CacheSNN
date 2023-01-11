@@ -1,5 +1,6 @@
 package CacheSNN
 
+import RingNoC.NocInterface
 import spinal.core._
 import spinal.lib._
 
@@ -111,17 +112,42 @@ class AerPacketHead extends Bundle {
   val nid = UInt(16 bits)
 
   def toAerCustomField: Bits = {
-    eventType.asBits.resize(3) ## B(0, 13 bits) ## nid
+    PacketType.AER.asBits.resize(3) ## B(0, 13 bits) ##
+      eventType.asBits.resize(3) ## B(0, 13 bits) ## nid
   }
 
   def assignFromAerCustomField(b: Bits): Unit = {
     eventType.assignFromBits(b(31 downto 29))
     nid := b(15 downto 0).asUInt
   }
+
+  def isHeadOnlyPacket: Bool = {
+    eventType===AER.TYPE.W_FETCH
+  }
 }
 
 class AerPacket extends PacketBase[AerPacketHead] {
   val head = Stream(new AerPacketHead)
+
+  def toNocInterface(dest: UInt, src: UInt = 0): Stream[Fragment[NocInterface]] = {
+    val ret = NocInterface()
+    val transBody = RegInit(False)
+      .setWhen(head.fire && !head.isHeadOnlyPacket)
+      .clearWhen(body.lastFire)
+
+    when(transBody){
+      ret.arbitrationFrom(body)
+      ret.flit := body.fragment
+      ret.last := body.last
+      head.setBlocked()
+    }otherwise{
+      ret.arbitrationFrom(head)
+      ret.setHead(dest, src, head.toAerCustomField)
+      ret.last := head.isHeadOnlyPacket
+      body.setBlocked()
+    }
+    ret
+  }
 }
 
 class BaseReadRsp extends Bundle {

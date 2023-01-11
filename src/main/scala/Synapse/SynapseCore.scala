@@ -1,11 +1,13 @@
 package Synapse
 
 import CacheSNN.{AER, NocCore}
-import RingNoC.NocInterfaceLocal
+import Synapse.SynapseCore.timeWindowWidth
 import Util.MemAccessBusConfig
 import spinal.core._
 import spinal.lib._
 import spinal.lib.bus.misc.SizeMapping
+import spinal.lib.bus.regif.AccessType._
+import spinal.lib.bus.regif._
 import spinal.lib.bus.simple.{PipelinedMemoryBusConfig, PipelinedMemoryBusInterconnect}
 
 import scala.collection.immutable.ListMap
@@ -81,7 +83,6 @@ object CacheConfig {
 case class SynapseCsr() extends Bundle {
   val len = UInt(CacheConfig.wordOffsetWidth bits)
   val learning = Bool()
-  val timestamp = in UInt(CacheConfig.tagTimestampWidth bits)
   val refractory = UInt(CacheConfig.tagTimestampWidth bits)
 }
 
@@ -117,10 +118,6 @@ class ExpLutQuery extends Bundle with IMasterSlave {
 class SynapseCore extends NocCore {
   import SynapseCore.AddrMapping
 
-  val io = new Bundle {
-    val noc = slave(NocInterfaceLocal())
-  }
-
   val synapseCtrl = new SynapseCtrl
   val synapse = new Synapse
   val preSpikeFetch = new PreSpikeFetch
@@ -145,10 +142,33 @@ class SynapseCore extends NocCore {
 
   interconnect.addMaster(
     synapseCtrl.io.bus,
-    Seq(cache.io.bus, currentRam.io.bus, preSpikeRam.io.bus, postSpikeRam.io.bus, ltpLut.io.bus, ltdLut.io.bus)
+    Seq(cache.io.bus, currentRam.io.bus, preSpikeRam.io.bus, postSpikeRam.io.bus)
+  )
+  interconnect.addMaster(
+    interface.dataBus.toPipeLineMemoryBus,
+    Seq(preSpikeRam.io.bus, postSpikeRam.io.bus, ltpLut.io.bus, ltdLut.io.bus)
   )
 
-  synapseCtrl.io.noc <> io.noc
+  val regArea = new Area {
+    val csr = SynapseCsr()
+    val busIf = Apb3BusInterface(interface.regBus, SizeMapping(0, 256 Byte), 0, "synapseCoreReg")
+    val HIT_CNT = busIf.newReg("hit count")
+    val FIELD0 = busIf.newReg("field 0")
+    csr.len := FIELD0.field(UInt(7 bits), WO, "len")
+    csr.learning := FIELD0.field(Bool, WO, "learning")
+    csr.refractory := FIELD0.field(UInt(CacheConfig.tagTimestampWidth bits), WO, "refractory")
+
+    val FIELD1 = busIf.newReg("field 1")
+    val neuronCoreId = FIELD1.field(UInt(4 bits), WO, "neuronCoreId")
+
+    busIf.accept(HtmlGenerator("regIf", "synapseCore"))
+  }
+
+  Seq(synapseCtrl.io.csr, synapse.io.csr).foreach( _ := regArea.csr)
+  preSpikeFetch.io.learning := regArea.csr.learning
+
+  synapseCtrl.io.aerIn <> interface.aer
+  synapseCtrl.io.aerOut.toNocInterface(regArea.neuronCoreId) >> interface.localSend
   synapseCtrl.io.spikeEventDone := synapse.io.synapseEventDone
   synapseCtrl.io.spikeEvent >> preSpikeFetch.io.spikeEvent
   preSpikeFetch.io.synapseEvent >> synapse.io.synapseEvent

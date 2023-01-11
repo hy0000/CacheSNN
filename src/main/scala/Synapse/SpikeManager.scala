@@ -9,6 +9,7 @@ import spinal.lib.fsm._
 class SpikeManager extends Component {
   val io = new Bundle {
     val csr = in(SynapseCsr())
+    val timestamp = in UInt(CacheConfig.tagTimestampWidth bits)
     val spike = slave(Stream(new Spike))
     val spikeEvent = master(Stream(new SpikeEvent))
     val bus = master(MemAccessBus(SynapseCore.memAccessBusConfig))
@@ -31,6 +32,7 @@ class SpikeManager extends Component {
   io.flush >> spikeCacheManager.io.flush
   io.free := missManager.io.free && spikeCnt===0
   spikeCacheManager.io.csr := io.csr
+  spikeCacheManager.io.timestamp := io.timestamp
   missManager.io.len := io.csr.len.resized
 
   spikeQueue.io.push << StreamArbiterFactory.lowerFirst
@@ -65,6 +67,7 @@ class SpikeCacheManager extends Component {
 
   val io = new Bundle {
     val csr = in(SynapseCsr())
+    val timestamp = in UInt(CacheConfig.tagTimestampWidth bits)
     val spikeIn = slave(Stream(new Spike))
     val missSpike = master(Stream(MissSpike()))
     val hitSpike = master(Stream(new SpikeEvent))
@@ -188,7 +191,7 @@ class SpikeCacheManager extends Component {
     bus.wData.tag := tag
     bus.wData.valid := True
     bus.wData.locked := lock
-    bus.wData.timeStamp := io.csr.timestamp
+    bus.wData.timeStamp := io.timestamp
   }
 
   case class Folder() extends Bundle {
@@ -226,7 +229,7 @@ class SpikeCacheManager extends Component {
     val currentFolders = tags.zipWithIndex.map{ case( t, wayLow) =>
       val replaceLastWay = stepDelay===(CacheConfig.steps - 1) && !tags.last.locked && Bool(wayLow==(CacheConfig.wayCountPerStep-1))
       val ret = Folder()
-      ret.timeDiff := io.csr.timestamp - t.timeStamp
+      ret.timeDiff := io.timestamp - t.timeStamp
       ret.hit := t.valid && spikeIn.tag()===t.tag
       ret.replace := t.valid && (ret.timeDiff > io.csr.refractory || replaceLastWay)
       ret.available := !t.valid

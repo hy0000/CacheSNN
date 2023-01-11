@@ -1,7 +1,7 @@
 package Synapse
 
-import CacheSNN.{AER, CacheSNN}
-import RingNoC.NocInterfaceLocal
+import CacheSNN.{AER, AerPacket, NocCore}
+import RingNoC.{NocInterface, NocInterfaceLocal}
 import Synapse.SynapseCore._
 import Util.MemAccessBus
 import Util.Misc
@@ -12,12 +12,34 @@ import spinal.lib.fsm._
 
 class SynapseCtrl extends Component {
   val io = new Bundle {
-    val noc = slave(NocInterfaceLocal())
+    val csr = in(SynapseCsr())
+    val aerIn = slave(new AerPacket)
+    val aerOut = master(new AerPacket)
     val bus = master(PipelinedMemoryBus(pipeLineMemoryBusMasterConfig))
     val spikeEvent = master(Stream(new SpikeEvent))
     val spikeEventDone = in Bool()
   }
-  stub()
+
+  val spikeManager = new SpikeManager
+  val spikeDecoder = new SpikeDecoder
+  val spikeShifter = new SpikeShifter
+  val spikeUpdater = new SpikeUpdater
+/*
+  val fsm = new StateMachine {
+    val idle = makeInstantEntry()
+    val flush = new State
+    val compute = new State
+    val current = new State
+    val spikeShift =new State
+    val spikeUpdate = new State
+
+    idle.whenIsActive {
+
+    }
+  }
+
+ */
+ stub()
 }
 
 class SpikeDecoder extends Component {

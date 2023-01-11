@@ -68,7 +68,7 @@ class SpikeCacheManagerAgent(dut:SpikeCacheManager) {
     }
   }
 
-  def currentTime:Int = dut.io.csr.timestamp.toInt
+  def currentTime:Int = dut.io.timestamp.toInt
 
   val tagRam = Array.tabulate(CacheConfig.setSize, CacheConfig.ways){
     (_, _) => new TagSim
@@ -161,7 +161,7 @@ class SpikeCacheManagerAgent(dut:SpikeCacheManager) {
 
       for ((t, way) <- tagSet.zipWithIndex) {
         val replaceLastWayValid = way == CacheConfig.ways - 1 && !t.locked
-        val thisTimestampDiff = (dut.io.csr.timestamp.toInt + timestampUpBound - t.timestamp) % timestampUpBound
+        val thisTimestampDiff = (dut.io.timestamp.toInt + timestampUpBound - t.timestamp) % timestampUpBound
         val inRefractory = thisTimestampDiff <= dut.io.csr.refractory.toInt
         val replaceValid = !t.locked && !inRefractory && thisTimestampDiff > timestampDiff
         if (replaceValid || (!replace && replaceLastWayValid)) {
@@ -256,7 +256,7 @@ class SpikeCacheManagerTest extends AnyFunSuite {
     SimTimeout(100000)
     dut.io.csr.learning #= false
     dut.io.csr.refractory #= 1
-    dut.io.csr.timestamp #= 0
+    dut.io.timestamp #= 0
     val agent = new SpikeCacheManagerAgent(dut)
 
     StreamReadyRandomizer(dut.io.missSpike, dut.clockDomain)
@@ -319,7 +319,7 @@ class SpikeCacheManagerTest extends AnyFunSuite {
       val agent = initDutWithSpike(dut, spike)
 
       dut.clockDomain.waitSampling(50)
-      dut.io.csr.timestamp #= 2
+      dut.io.timestamp #= 2
       val missSpike = spike.map(s => new SpikeSim(nid=s.nid + 0xF000))
       agent.sendSpike(missSpike)
       agent.waitDone()
@@ -332,7 +332,7 @@ class SpikeCacheManagerTest extends AnyFunSuite {
       val agent = initDutWithSpike(dut, spike)
 
       dut.clockDomain.waitSampling(50)
-      dut.io.csr.timestamp #= 1 // in refractory lock
+      dut.io.timestamp #= 1 // in refractory lock
       val missSpike = spike.map(s => new SpikeSim(nid = s.nid + 0xF000))
       agent.sendSpike(missSpike)
       agent.waitDone()
@@ -347,11 +347,11 @@ class SpikeCacheManagerTest extends AnyFunSuite {
       val t3ReplaceSpike = spikeForReplace.map(s => new SpikeSim(nid = s.nid + 0xF000))
       val agent = initDutWithSpike(dut, spike)
 
-      dut.io.csr.timestamp #= 1
+      dut.io.timestamp #= 1
       agent.sendSpike(t1HitSpike)
       agent.waitDone()
 
-      dut.io.csr.timestamp #= 3
+      dut.io.timestamp #= 3
       agent.sendSpike(t3ReplaceSpike)
 
       for (s <- spikeForReplace) {
@@ -371,7 +371,7 @@ class SpikeCacheManagerTest extends AnyFunSuite {
       val spike = (0 until CacheConfig.lines * 10).map(nid => new SpikeSim(nidBase + nid))
 
       for(t <- 0 until 10){
-        dut.io.csr.timestamp #= t % (1<<CacheConfig.tagTimestampWidth)
+        dut.io.timestamp #= t % (1<<CacheConfig.tagTimestampWidth)
         val thisSpike = Random.shuffle(spike).take(100)
         agent.sendSpike(thisSpike)
         agent.waitDone()
@@ -579,7 +579,7 @@ class SpikeManagerTest extends AnyFunSuite {
       dut.io.csr.len #= len - 1
       dut.io.csr.learning #= false
       dut.io.csr.refractory #= 1
-      dut.io.csr.timestamp #= 3
+      dut.io.timestamp #= 3
       dut.io.flush.valid #= true
       dut.clockDomain.waitSamplingWhere(dut.io.flush.ready.toBoolean)
       dut.io.csr.learning #= true
@@ -588,12 +588,11 @@ class SpikeManagerTest extends AnyFunSuite {
       val epoch = 7
       val spikeAll = (0 until dim).map(nid => new SpikeSim(nid))
       val epochSpike = Seq.fill(epoch)(Random.shuffle(spikeAll).take(70))
-      //val epochSpike = Seq.fill(epoch)(spikeAll.take(1))
       for((spikeIn, t) <- epochSpike.zipWithIndex){
         for(s <- spikeIn){
           spikeQueue.enqueue(_.nid #= s.nid)
         }
-        dut.io.csr.timestamp #= t % (1<<CacheConfig.tagTimestampWidth)
+        dut.io.timestamp #= t % (1<<CacheConfig.tagTimestampWidth)
         dut.clockDomain.waitSamplingWhere(spikeQueue.isEmpty)
         dut.clockDomain.waitSampling()
         dut.clockDomain.waitSamplingWhere(dut.io.free.toBoolean)
