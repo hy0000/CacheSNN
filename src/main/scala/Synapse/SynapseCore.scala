@@ -14,6 +14,7 @@ object SynapseCore {
   val busDataWidth = 64
   val busByteCount = busDataWidth / 8
   val timeWindowWidth = 16
+  val maxPreSpike = 1024
 
   object AddrMapping {
     val cache      = SizeMapping(0, CacheConfig.size)
