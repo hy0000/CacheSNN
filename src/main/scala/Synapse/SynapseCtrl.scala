@@ -1,23 +1,23 @@
 package Synapse
 
-import CacheSNN.{AER, AerPacket, NocCore}
-import RingNoC.{NocInterface, NocInterfaceLocal}
+import CacheSNN.{AER, AerPacket}
 import Synapse.SynapseCore._
-import Util.MemAccessBus
-import Util.Misc
+import Util.{MemAccessBus, Misc}
 import spinal.core._
 import spinal.lib._
-import spinal.lib.bus.simple.{PipelinedMemoryBus, PipelinedMemoryBusConfig}
 import spinal.lib.fsm._
 
 class SynapseCtrl extends Component {
+  import AER.TYPE._
+
   val io = new Bundle {
     val csr = in(SynapseCsr())
     val aerIn = slave(new AerPacket)
     val aerOut = master(new AerPacket)
-    val bus = master(PipelinedMemoryBus(pipeLineMemoryBusMasterConfig))
+    val bus = master(MemAccessBus(SynapseCore.memAccessBusConfig))
     val spikeEvent = master(Stream(new SpikeEvent))
     val spikeEventDone = slave(Stream(new SpikeEvent))
+    val free = out(Bool())
   }
 
   val spikeManager = new SpikeManager
@@ -25,34 +25,113 @@ class SynapseCtrl extends Component {
   val spikeShifter = new SpikeShifter
   val spikeUpdater = new SpikeUpdater
 
-  val timestamp = Counter(CacheConfig.tagTimestampWidth bits, spikeDecoder.io.free.rise(False))
+  val timestamp = Counter(CacheConfig.tagTimestampWidth bits)
+  val aerHeadReg = cloneOf(io.aerIn.head.payload) setAsReg()
 
   spikeManager.io.timestamp := timestamp
   spikeManager.io.csr := io.csr
-  spikeManager.io.spike.setIdle()
+  spikeManager.io.spike << spikeDecoder.io.spikeOut
   spikeManager.io.spikeEvent >> io.spikeEvent
   spikeManager.io.spikeEventDone << io.spikeEventDone
   spikeManager.io.aerOut <> io.aerOut
 
-  Misc.idleStream(spikeManager.io.spike, spikeUpdater.io.spike)
   Misc.clearIO(io)
+  Misc.idleIo(spikeManager.io, spikeDecoder.io, spikeUpdater.io, spikeShifter.io)
 
-  /*
-  val fsm = new StateMachine {
-    val idle = makeInstantEntry()
-    val flush = new State
-    val compute = new State
-    val current = new State
-    val spikeShift =new State
-    val spikeUpdate = new State
+  val currentFsm = new StateMachine {
+    val readCmd = new State with EntryPoint
+    val head, body = new State
 
-    idle.whenIsActive {
+    readCmd.whenIsActive{
+      io.bus.cmd.valid := True
+      io.bus.cmd.address := AddrMapping.postSpike.base
+      io.bus.cmd.write := False
+      io.bus.cmd.len := io.csr.len.resized
+      when(io.bus.cmd.ready){
+        goto(head)
+      }
+    }
 
+    head.whenIsActive{
+      io.aerOut.head.valid := True
+      io.aerOut.head.nid := io.csr.postNidBase
+      io.aerOut.head.eventType := CURRENT
+      when(io.aerOut.head.ready){
+        goto(body)
+      }
+    }
+
+    body.whenIsActive{
+      io.aerOut.body << io.bus.rsp
+      when(io.aerOut.body.lastFire){
+        exitFsm()
+      }
     }
   }
 
- */
- stub()
+  val fsm = new StateMachine {
+    val idle = makeInstantEntry()
+    val flush = new State
+    val bufferSpike = new State
+    val compute = new State
+    val current = new StateFsm(currentFsm)
+    val preSpikeShift =new State
+    val postSpikeUpdate = new State
+
+    idle.whenIsActive {
+      io.free := True
+      io.aerIn.head.ready := True
+      when(io.aerIn.head.valid){
+        aerHeadReg := io.aerIn.head.payload
+        goto(bufferSpike)
+      }
+    }
+
+    bufferSpike.whenIsActive{
+      io.aerIn.body.ready := True
+      spikeDecoder.io.maskSpike.valid := io.aerIn.body.valid
+      spikeDecoder.io.maskSpike.payload := io.aerIn.body.fragment
+      when(io.aerIn.body.lastFire){
+        goto(compute)
+      }
+    }
+
+    compute.whenIsActive{
+      spikeManager.io.spike << spikeDecoder.io.spikeOut
+      spikeManager.io.bus <> io.bus
+      spikeManager.io.aerIn <> io.aerIn
+      when(spikeManager.io.free && spikeDecoder.io.free){
+        goto(current)
+      }
+    }
+
+    current.whenCompleted{
+      when(io.csr.learning){
+        goto(preSpikeShift)
+      }otherwise{
+        goto(idle)
+      }
+    }
+
+    preSpikeShift.whenIsActive{
+      spikeShifter.io.bus <> io.bus
+      spikeShifter.io.run.valid := True
+      when(spikeShifter.io.run.ready){
+        goto(postSpikeUpdate)
+      }
+    }
+
+    postSpikeUpdate.whenIsActive{
+      spikeUpdater.io.bus <> io.bus
+      when(spikeUpdater.io.done){
+        when(io.csr.flush){
+          goto(flush)
+        }otherwise{
+          goto(idle)
+        }
+      }
+    }
+  }
 }
 
 class SpikeDecoder extends Component {
@@ -125,15 +204,16 @@ class SpikeDecoder extends Component {
 class SpikeShifter extends Component {
   val io = new Bundle {
     val run = slave(Event) // valid start ready done
-    val bus = master(MemAccessBus(SynapseCore.memAccessBusConfig))
+    val bus = master(MemAccessBus(memAccessBusConfig))
   }
   stub()
 }
 
 class SpikeUpdater extends Component {
   val io = new Bundle {
-    val spike = slave(Stream(new Spike))
-    val bus = master(MemAccessBus(SynapseCore.memAccessBusConfig))
+    val maskSpike = slave(Stream(Bits(busDataWidth bits)))
+    val done = out Bool()
+    val bus = master(MemAccessBus(memAccessBusConfig))
   }
   stub()
 }
