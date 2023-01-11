@@ -17,14 +17,27 @@ class SynapseCtrl extends Component {
     val aerOut = master(new AerPacket)
     val bus = master(PipelinedMemoryBus(pipeLineMemoryBusMasterConfig))
     val spikeEvent = master(Stream(new SpikeEvent))
-    val spikeEventDone = in Bool()
+    val spikeEventDone = slave(Stream(new SpikeEvent))
   }
 
   val spikeManager = new SpikeManager
   val spikeDecoder = new SpikeDecoder
   val spikeShifter = new SpikeShifter
   val spikeUpdater = new SpikeUpdater
-/*
+
+  val timestamp = Counter(CacheConfig.tagTimestampWidth bits, spikeDecoder.io.free.rise(False))
+
+  spikeManager.io.timestamp := timestamp
+  spikeManager.io.csr := io.csr
+  spikeManager.io.spike.setIdle()
+  spikeManager.io.spikeEvent >> io.spikeEvent
+  spikeManager.io.spikeEventDone << io.spikeEventDone
+  spikeManager.io.aerOut <> io.aerOut
+
+  Misc.idleStream(spikeManager.io.spike, spikeUpdater.io.spike)
+  Misc.clearIO(io)
+
+  /*
   val fsm = new StateMachine {
     val idle = makeInstantEntry()
     val flush = new State

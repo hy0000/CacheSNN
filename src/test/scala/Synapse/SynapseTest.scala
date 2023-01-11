@@ -203,6 +203,7 @@ class SynapseTest extends AnyFunSuite {
       slaves.current.mem.writeBigInt(0, current, 8)
       dut.io.csr.learning #= true
       dut.io.csr.len #= 0
+      dut.io.synapseEventDone.ready #= true
       fork{
         dut.io.synapseEvent.valid #= true
         dut.io.synapseEvent.preSpike #= preSpike
@@ -221,7 +222,10 @@ class SynapseTest extends AnyFunSuite {
         assert(dut.io.current.write.valid.toBoolean)
         assert(dut.io.current.write.address.toLong==0)
         assert(dut.io.current.write.data.toBigInt==writeBackCurrent)
-        assert(dut.io.synapseEventDone.toBoolean)
+        dut.clockDomain.waitSampling(2)
+        assert(dut.io.synapseEventDone.valid.toBoolean)
+        assert(dut.io.synapseEventDone.nid.toInt==dut.io.synapseEvent.nid.toInt)
+        assert(dut.io.synapseEventDone.cacheLineAddr.toInt==cacheLineAddr)
       }
       cacheWriteBack.join()
       currentWriteBack.join()
@@ -259,6 +263,7 @@ object SynapseLearningPlot extends App{
     dut.io.synapseEvent.cacheLineAddr #= 0
     dut.io.csr.len #= 0
     dut.io.csr.learning #= true
+    dut.io.synapseEventDone.ready #= true
 
     var preSpike = 0
     for (t <- 0 until step) {
@@ -268,7 +273,7 @@ object SynapseLearningPlot extends App{
       dut.io.synapseEvent.preSpike #= preSpike
       dut.clockDomain.waitSamplingWhere(dut.io.synapseEvent.ready.toBoolean)
       dut.io.synapseEvent.valid #= false
-      dut.clockDomain.waitSamplingWhere(dut.io.synapseEventDone.toBoolean)
+      dut.clockDomain.waitSamplingWhere(dut.io.synapseEventDone.valid.toBoolean)
       dut.clockDomain.waitSampling()
 
       // @deprecate instead by random post spike

@@ -15,12 +15,12 @@ class SpikeManager extends Component {
     val bus = master(MemAccessBus(SynapseCore.memAccessBusConfig))
     val aerIn = slave(new AerPacket)
     val aerOut = master(new AerPacket)
-    val synapseEventDone = slave(Stream(new SpikeEvent))
+    val spikeEventDone = slave(Stream(new SpikeEvent))
     val flush = slave(Event)
     val free = out Bool()
   }
 
-  val spikeCnt = CounterUpDown(1024, io.spike.fire, io.synapseEventDone.fire)
+  val spikeCnt = CounterUpDown(1024, io.spike.fire, io.spikeEventDone.fire)
 
   val spikeCacheManager = new SpikeCacheManager
   val missManager = new MissSpikeManager
@@ -49,7 +49,7 @@ class SpikeManager extends Component {
   missManager.io.bus <> io.bus
   missManager.io.aerIn <> io.aerIn
   missManager.io.aerOut <> io.aerOut
-  io.synapseEventDone >> spikeCacheManager.io.synapseEventDone
+  io.spikeEventDone >> spikeCacheManager.io.synapseEventDone
 }
 
 object MissAction extends SpinalEnum {

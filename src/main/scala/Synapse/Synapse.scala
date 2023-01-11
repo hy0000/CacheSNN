@@ -69,7 +69,7 @@ class Synapse extends Component {
     val csr = in(SynapseCsr())
     val synapseEvent = slave(Stream(new SynapseEvent))
     val synapseData = master(MemReadWrite(64, CacheConfig.wordAddrWidth))
-    val synapseEventDone = out Bool()
+    val synapseEventDone = master(Stream(new SpikeEvent))
     val postSpike = master(MemReadPort(Bits(64 bits), spikeBufferAddrWidth))
     val ltpQuery = master(new ExpLutQuery)
     val ltdQuery = master(new ExpLutQuery)
@@ -77,6 +77,8 @@ class Synapse extends Component {
   }
 
   val spikeTimeDiff = new SpikeTimeDiff
+  val eventDone = Stream(new SpikeEvent)
+  eventDone.halfPipe().halfPipe() >> io.synapseEventDone
 
   def vAdd(a:Vec[SInt], b:Vec[SInt]): Bits = {
     a.zip(b).map(z => z._1 +| z._2)
@@ -89,23 +91,25 @@ class Synapse extends Component {
   }
 
   val pipeline = new Pipeline {
-    val LEARNING = Stageable(Bool())
     val ADDR_INCR = Stageable(UInt(io.csr.len.getWidth bits))
     val CACHE_ADDR = Stageable(UInt(CacheConfig.wordAddrWidth bits))
     val PRE_SPIKE = Stageable(Bits(16 bits))
-
+    val DONE = Stageable(Bool())
+    val NID = Stageable(cloneOf(io.synapseEvent.nid))
     val DELTA_WEIGHT, WEIGHT, CURRENT = Stageable(Bits(64 bits))
 
     val s0 = new Stage {
-      valid := io.synapseEvent.valid
+      valid := io.synapseEvent.valid && eventDone.isFree
       // address bursting and send post spike read cmd
-      val addrOffset = Counter(io.csr.len.getWidth bits, io.synapseEvent.valid)
+      val addrOffset = Counter(io.csr.len.getWidth bits, valid)
       io.synapseEvent.ready := False
+      DONE := False
       when(addrOffset.willIncrement && addrOffset.value===io.csr.len){
         addrOffset.clear()
         io.synapseEvent.ready := True
+        DONE := True
       }
-
+      NID := io.synapseEvent.nid
       ADDR_INCR := addrOffset.value
       CACHE_ADDR := io.synapseEvent.cacheLineAddr @@ addrOffset.value
       PRE_SPIKE := io.synapseEvent.preSpike
@@ -157,7 +161,9 @@ class Synapse extends Component {
       io.current.write.valid := valid
       io.current.write.address := ADDR_INCR.resized
       io.current.write.data := CURRENT
-      io.synapseEventDone := valid
+      eventDone.valid := DONE
+      eventDone.nid := NID
+      eventDone.cacheLineAddr := CACHE_ADDR>>io.csr.len.getWidth
     }
   }
   pipeline.build()

@@ -557,7 +557,7 @@ class SpikeManagerTest extends AnyFunSuite {
       val cache = MemAccessBusMemSlave(dut.io.bus, dut.clockDomain, 3)
       val (spikeDriver, spikeQueue) = StreamDriver.queue(dut.io.spike, dut.clockDomain)
       spikeDriver.transactionDelay = () => 0
-      val (_, doneSpikeQueue) = StreamDriver.queue(dut.io.synapseEventDone, dut.clockDomain)
+      val (_, doneSpikeQueue) = StreamDriver.queue(dut.io.spikeEventDone, dut.clockDomain)
 
       StreamReadyRandomizer(dut.io.spikeEvent, dut.clockDomain)
       StreamMonitor(dut.io.spikeEvent, dut.clockDomain) { se =>
