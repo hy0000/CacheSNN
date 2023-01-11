@@ -3,9 +3,7 @@ package Synapse
 import CacheSNN.{AER, AerPacket}
 import Util.{MemAccessBus, Misc}
 import spinal.core._
-import spinal.core.sim.SimMemPimper
 import spinal.lib._
-import spinal.lib.bus.bram.{BRAM, BRAMConfig}
 import spinal.lib.fsm._
 
 class SpikeManager extends Component {
@@ -21,15 +19,23 @@ class SpikeManager extends Component {
     val free = out Bool()
   }
 
+  val spikeCnt = CounterUpDown(1024, io.spike.fire, io.synapseEventDone.fire)
+
   val spikeCacheManager = new SpikeCacheManager
   val missManager = new MissSpikeManager
-  val hitQueue = StreamFifo(new SpikeEvent, 256)
-  val missQueue = StreamFifo(MissSpike(), 256)
+  val spikeQueue = StreamFifo(new Spike, 128)
+  val hitQueue = StreamFifo(new SpikeEvent, 128)
+  val missQueue = StreamFifo(MissSpike(), 128)
   val readyQueue = StreamFifo(new SpikeEvent, 4)
 
   io.flush >> spikeCacheManager.io.flush
-  io.free := spikeCacheManager.io.free && missManager.io.free
-  io.spike >> spikeCacheManager.io.spikeIn
+  io.free := missManager.io.free && spikeCnt===0
+  spikeCacheManager.io.csr := io.csr
+  missManager.io.len := io.csr.len.resized
+
+  spikeQueue.io.push << StreamArbiterFactory.lowerFirst
+    .on(Seq(spikeCacheManager.io.failSpike, io.spike))
+  spikeCacheManager.io.spikeIn << spikeQueue.io.pop
   spikeCacheManager.io.hitSpike >> hitQueue.io.push
   spikeCacheManager.io.missSpike >> missQueue.io.push
   missManager.io.missSpike << missQueue.io.pop
@@ -117,9 +123,10 @@ class SpikeCacheManager extends Component {
 
   val flushFsm = new StateMachine {
     val cnt = Counter(CacheConfig.lines)
-    val step = cnt(log2Up(CacheConfig.steps) - 1 downto 0)
-    val setIndex = cnt(CacheConfig.setIndexRange.high + step.getWidth downto step.getWidth)
-    val tagArraySel = cnt(cnt.high downto step.getWidth + setIndex.getWidth)
+    val setIndex = UInt(CacheConfig.setIndexRange.length bits)
+    val step = UInt(log2Up(CacheConfig.steps) bits)
+    val tagArraySel = UInt((log2Up(CacheConfig.wayCountPerStep) bits))
+    (setIndex, step, tagArraySel) := cnt.value
     val bus = tagBus(tagArraySel)
     val start = new State with EntryPoint
     val r, w = new State
@@ -128,7 +135,7 @@ class SpikeCacheManager extends Component {
     def tagClear(): Unit ={
       bus.valid := True
       bus.write := True
-      bus.address := cnt.value.resized
+      bus.address := setIndex @@ step
       bus.wData := TagItem().getZero
     }
 
@@ -142,19 +149,20 @@ class SpikeCacheManager extends Component {
     r.whenIsActive{
       bus.valid := True
       bus.write := False
-      bus.address := cnt.value.resized
+      bus.address := setIndex @@ step
       goto(w)
     }
     w.whenIsActive{
-      tagClear()
       when(bus.rData.valid){
         io.missSpike.valid := True
         io.missSpike.nid := 0
         io.missSpike.replaceNid := bus.rData.tag @@ setIndex
         io.missSpike.action := MissAction.WRITE_BACK
+        io.missSpike.cacheLineAddr := setIndex @@ step @@ tagArraySel
       }
       when(io.missSpike.ready) {
         cnt.increment()
+        tagClear()
         when(cnt.willOverflow){
           io.flush.ready := True
           exitFsm()
@@ -425,12 +433,7 @@ class MissSpikeManager extends Component {
       .whenIsActive {
         io.aerOut.head.valid := True
         io.aerOut.head.eventType := AER.TYPE.W_WRITE
-        when(io.missSpike.action === MissAction.WRITE_BACK){
-          io.aerOut.head.nid := io.missSpike.nid
-        }otherwise{ // replace action
-          io.aerOut.head.nid := io.missSpike.replaceNid
-        }
-
+        io.aerOut.head.nid := io.missSpike.replaceNid
         when(io.aerOut.head.ready) {
           goto(dataBody)
         }

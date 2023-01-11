@@ -1,20 +1,17 @@
 package Synapse
 
-import CacheSNN.AER
+import CacheSNN.{AER, AerPacket}
 import CacheSNN.CacheSnnTest._
 import CacheSNN.sim.{AerDriver, AerMonitor, AerPacketSim}
 import Util.sim.MemAccessBusMemSlave
+import Util.sim.NumberTool._
 import org.scalatest.funsuite.AnyFunSuite
+import spinal.core._
 import spinal.core.sim._
 import spinal.lib.sim.{StreamDriver, StreamMonitor, StreamReadyRandomizer}
 
 import scala.collection.{breakOut, mutable}
 import scala.util.Random
-
-
-class SpikeManagerTest extends AnyFunSuite {
-
-}
 
 class SpikeSim(val nid: Int){
   def setIndex():Int = nid & ((1<<CacheConfig.setIndexRange.size) - 1)
@@ -26,7 +23,7 @@ class SpikeEventSim(nid: Int,
 
   def assertEqual(sPort: SpikeEvent): Unit = {
     assert(sPort.nid.toInt == nid)
-    assert(sPort.cacheLineAddr.toInt == cacheAddr)
+    assert(sPort.cacheLineAddr.toInt == cacheAddr, s"${sPort.cacheLineAddr.toInt.toHexString} ${cacheAddr.toHexString}")
   }
 }
 
@@ -37,7 +34,7 @@ class MissSpikeSim(nid: Int,
 
   def assertEqual(sPort: MissSpike): Unit = {
     assertEqual(sPort.asInstanceOf[SpikeEvent])
-    assert(sPort.replaceNid.toInt == replaceNid, s"${sPort.replaceNid.toInt} ${replaceNid} at nid ${nid}")
+    assert(sPort.replaceNid.toInt == replaceNid, s"${sPort.replaceNid.toInt} ${replaceNid}")
     assert(sPort.action.toEnum == action, s"${sPort.action.toEnum} ${action}")
   }
 }
@@ -63,7 +60,7 @@ class SpikeCacheManagerAgent(dut:SpikeCacheManager) {
     var timestamp = 0
 
     def nid(setIndex:Int): Int = {
-      (tag<<CacheConfig.setIndexRange.size) | setIndex
+      (tag<<CacheConfig.setIndexRange.length) | setIndex
     }
 
     override def toString = {
@@ -94,20 +91,23 @@ class SpikeCacheManagerAgent(dut:SpikeCacheManager) {
   }
 
   def flush(): Unit = {
+    dut.io.flush.valid #= true
     for (setIndex <- tagRam.indices) {
       for (way <- 0 until CacheConfig.ways) {
         val t = tagRam(setIndex)(way)
         if (dut.io.csr.learning.toBoolean && t.valid) {
           val writeBackSpike = new MissSpikeSim(
-            nid = t.nid(setIndex),
+            nid = 0,
             cacheAddr = genCacheAddress(setIndex, way),
-            replaceNid = 0,
+            replaceNid = t.nid(setIndex),
             action = MissAction.WRITE_BACK
           )
           missQueue.enqueue(writeBackSpike)
         }
       }
     }
+    dut.clockDomain.waitSamplingWhere(dut.io.flush.ready.toBoolean)
+    dut.io.flush.valid #= false
   }
 
   def allocate(nid: Int): Unit ={
@@ -148,7 +148,7 @@ class SpikeCacheManagerAgent(dut:SpikeCacheManager) {
             action = MissAction.OVERRIDE
           )
           if(printState){
-            println(s"$nid compulsory")
+            println(s"$nid compulsory at s-$setIndex w-$way addr ${missSpike.cacheAddr.toHexString}")
           }
           missQueue.enqueue(missSpike)
         }
@@ -287,6 +287,16 @@ class SpikeCacheManagerTest extends AnyFunSuite {
     }
   }
 
+  test("flush with write back"){
+    complied.doSim { dut =>
+      val spike = (0 until CacheConfig.lines).map(nid => new SpikeSim(nid))
+      val agent = initDutWithSpike(dut, spike)
+      agent.waitDone()
+      agent.flush()
+      dut.clockDomain.waitSamplingWhere(agent.missQueue.isEmpty)
+    }
+  }
+
   test("allocate test") {
     complied.doSim{ dut =>
       val spike = (0 until CacheConfig.lines).map(nid => new SpikeSim(nid))
@@ -414,8 +424,7 @@ class MissSpikeManagerAgent(dut:MissSpikeManager) {
           val addr = addrBase | (lineOffset << 3)
           cache.mem.readBigInt(addr, 8)
         }
-        val nid = if (s.action == MissAction.REPLACE) s.replaceNid else s.nid
-        val aerWbPacket = AerPacketSim(0, 0, 0, AER.TYPE.W_WRITE, nid, data64)
+        val aerWbPacket = AerPacketSim(0, 0, 0, AER.TYPE.W_WRITE, s.replaceNid, data64)
         aerMonitor.addPacket(aerWbPacket)
       }
       if(s.action != MissAction.WRITE_BACK){
@@ -488,6 +497,119 @@ class MissSpikeManagerTest extends AnyFunSuite {
       val replaceSpike = seqMissSpikeGen(MissAction.REPLACE)
       agent.sendSpike(replaceSpike)
       agent.waiteDone()
+    }
+  }
+}
+
+class SpikeManagerTest extends AnyFunSuite {
+  val complied = simConfig.compile(new SpikeManager)
+
+  val dim = 1024
+  val len = 128
+
+  case class AerDataManager(dut: SpikeManager){
+    val memSpikeData = Array.tabulate(dim, len) {
+      (nid, offset) => BigInt(nid)*100000000 + offset*10000
+    }
+
+    val aerDriver = AerDriver(dut.io.aerIn, dut.clockDomain)
+
+    case class AerHeadSim(nid: Int, eventType: AER.TYPE.E)
+
+    val aerHeadQueue = mutable.Queue[AerHeadSim]()
+    val aerBodyQueue = mutable.Queue[BigInt]()
+
+    StreamMonitor(dut.io.aerOut.head, dut.clockDomain) { head =>
+      val headSim = AerHeadSim(head.nid.toInt, head.eventType.toEnum)
+      aerHeadQueue.enqueue(headSim)
+    }
+    StreamMonitor(dut.io.aerOut.body, dut.clockDomain) { body =>
+      aerBodyQueue.enqueue(body.fragment.toBigInt)
+    }
+    StreamReadyRandomizer(dut.io.aerOut.head, dut.clockDomain)
+    StreamReadyRandomizer(dut.io.aerOut.body, dut.clockDomain)
+
+
+    fork {
+      while (true){
+        dut.clockDomain.waitSamplingWhere(aerHeadQueue.nonEmpty)
+        val head = aerHeadQueue.dequeue()
+        if(head.eventType==AER.TYPE.W_WRITE){
+          dut.clockDomain.waitSamplingWhere(aerBodyQueue.length>=len)
+          for (i <- 0 until len) {
+            memSpikeData(head.nid)(i) = aerBodyQueue.dequeue()
+          }
+        }else{ // W_FETCH
+          val p = AerPacketSim(0, 0, 0, AER.TYPE.W_WRITE, head.nid, memSpikeData(head.nid))
+          aerDriver.sendPacket(p)
+        }
+      }
+    }
+  }
+
+  test("test"){
+    complied.doSim {dut =>
+      dut.clockDomain.forkStimulus(2)
+      SimTimeout(1000000)
+
+      val dataManager = AerDataManager(dut)
+      val memTruth = dataManager.memSpikeData.transpose.transpose // deep copy
+      val cache = MemAccessBusMemSlave(dut.io.bus, dut.clockDomain, 3)
+      val (spikeDriver, spikeQueue) = StreamDriver.queue(dut.io.spike, dut.clockDomain)
+      spikeDriver.transactionDelay = () => 0
+      val (_, doneSpikeQueue) = StreamDriver.queue(dut.io.synapseEventDone, dut.clockDomain)
+
+      StreamReadyRandomizer(dut.io.spikeEvent, dut.clockDomain)
+      StreamMonitor(dut.io.spikeEvent, dut.clockDomain) { se =>
+        val nid = se.nid.toInt
+        val cacheLineAddrOffset = log2Up(CacheConfig.size / CacheConfig.lines)
+        for (offset <- 0 until len) {
+          val addr = (se.cacheLineAddr.toLong << cacheLineAddrOffset) | (offset << 3)
+          val d = cache.mem.readBigInt(addr, 8) + 1
+          cache.mem.writeBigInt(addr, d, 8)
+          memTruth(nid)(offset) = d
+        }
+        val cacheAddr = se.cacheLineAddr.toInt
+        doneSpikeQueue.enqueue { doneSe =>
+          doneSe.nid #= nid
+          doneSe.cacheLineAddr #= cacheAddr
+        }
+      }
+
+      dut.io.csr.len #= len - 1
+      dut.io.csr.learning #= false
+      dut.io.csr.refractory #= 1
+      dut.io.csr.timestamp #= 3
+      dut.io.flush.valid #= true
+      dut.clockDomain.waitSamplingWhere(dut.io.flush.ready.toBoolean)
+      dut.io.csr.learning #= true
+      dut.io.flush.valid #= false
+
+      val epoch = 7
+      val spikeAll = (0 until dim).map(nid => new SpikeSim(nid))
+      val epochSpike = Seq.fill(epoch)(Random.shuffle(spikeAll).take(70))
+      //val epochSpike = Seq.fill(epoch)(spikeAll.take(1))
+      for((spikeIn, t) <- epochSpike.zipWithIndex){
+        for(s <- spikeIn){
+          spikeQueue.enqueue(_.nid #= s.nid)
+        }
+        dut.io.csr.timestamp #= t % (1<<CacheConfig.tagTimestampWidth)
+        dut.clockDomain.waitSamplingWhere(spikeQueue.isEmpty)
+        dut.clockDomain.waitSampling()
+        dut.clockDomain.waitSamplingWhere(dut.io.free.toBoolean)
+      }
+
+      dut.io.flush.valid #= true
+      dut.clockDomain.waitSamplingWhere(dut.io.flush.ready.toBoolean)
+      dut.io.flush.valid #= false
+      dut.clockDomain.waitSamplingWhere(dut.io.free.toBoolean)
+      dut.clockDomain.waitSamplingWhere(dataManager.aerBodyQueue.isEmpty)
+
+      for(nid <- 0 until dim){
+        for(i <- 0 until len){
+          assert(dataManager.memSpikeData(nid)(i) == memTruth(nid)(i), s"nid $nid at $i")
+        }
+      }
     }
   }
 }
