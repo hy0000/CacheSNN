@@ -131,6 +131,13 @@ class SynapseCtrl extends Component {
         }
       }
     }
+
+    flush.whenIsActive{
+      spikeManager.io.flush.valid := True
+      when(spikeManager.io.flush.ready){
+        goto(idle)
+      }
+    }
   }
 }
 
