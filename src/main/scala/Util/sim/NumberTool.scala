@@ -8,6 +8,10 @@ object NumberTool {
     v.foldRight(BigInt(0))((s, acc) => (acc << width) | (s & mask))
   }
 
+  def vToRawV(v: Seq[Int], width: Int, n: Int): Seq[BigInt] = {
+    v.grouped(n).map(g => vToRaw(g, width)).toSeq
+  }
+
   def rawToV(raw: BigInt, width: Int, n: Int): Seq[Int] = {
     val mask = (1 << width) - 1
     val msb = 1 << (width - 1)

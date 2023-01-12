@@ -22,7 +22,6 @@ class SynapseCtrl extends Component {
 
   val spikeManager = new SpikeManager
   val spikeDecoder = new SpikeDecoder
-  val spikeShifter = new SpikeShifter
   val spikeUpdater = new SpikeUpdater
 
   val timestamp = Counter(CacheConfig.tagTimestampWidth bits)
@@ -36,7 +35,7 @@ class SynapseCtrl extends Component {
   spikeManager.io.aerOut <> io.aerOut
 
   Misc.clearIO(io)
-  Misc.idleIo(spikeManager.io, spikeDecoder.io, spikeUpdater.io, spikeShifter.io)
+  Misc.idleIo(spikeManager.io, spikeDecoder.io, spikeUpdater.io)
 
   val currentFsm = new StateMachine {
     val readCmd = new State with EntryPoint
@@ -75,8 +74,7 @@ class SynapseCtrl extends Component {
     val bufferSpike = new State
     val compute = new State
     val current = new StateFsm(currentFsm)
-    val preSpikeShift =new State
-    val postSpikeUpdate = new State
+    val spikeUpdate = new State
 
     idle.whenIsActive {
       io.free := True
@@ -107,23 +105,17 @@ class SynapseCtrl extends Component {
 
     current.whenCompleted{
       when(io.csr.learning){
-        goto(preSpikeShift)
+        goto(spikeUpdate)
       }otherwise{
         goto(idle)
       }
     }
 
-    preSpikeShift.whenIsActive{
-      spikeShifter.io.bus <> io.bus
-      spikeShifter.io.run.valid := True
-      when(spikeShifter.io.run.ready){
-        goto(postSpikeUpdate)
-      }
-    }
-
-    postSpikeUpdate.whenIsActive{
+    spikeUpdate.whenIsActive{
+      spikeUpdater.io.run.valid := True
+      spikeUpdater.io.maskSpike << io.aerIn.body.translateWith(io.aerIn.body.fragment)
       spikeUpdater.io.bus <> io.bus
-      when(spikeUpdater.io.done){
+      when(spikeUpdater.io.run.ready){
         when(io.csr.flush){
           goto(flush)
         }otherwise{
@@ -208,19 +200,162 @@ class SpikeDecoder extends Component {
   }
 }
 
-class SpikeShifter extends Component {
+class SpikeUpdater extends Component {
   val io = new Bundle {
+    val preLen = in UInt(log2Up(maxPreSpike / 4) bits)
+    val postLen = in UInt(CacheConfig.wordOffsetWidth bits)
+    val maskSpike = slave(Stream(Bits(busDataWidth bits)))
     val run = slave(Event) // valid start ready done
     val bus = master(MemAccessBus(memAccessBusConfig))
   }
-  stub()
-}
 
-class SpikeUpdater extends Component {
-  val io = new Bundle {
-    val maskSpike = slave(Stream(Bits(busDataWidth bits)))
-    val done = out Bool()
-    val bus = master(MemAccessBus(memAccessBusConfig))
+  val lenWidth = scala.math.max(io.preLen.getWidth, io.postLen.getWidth)
+
+  val buffer = Mem(Bits(64 bits), 1<<lenWidth)
+  val bufferAddr = Counter(lenWidth bits)
+  val bufferWriteEnable, bufferReadEnable = False
+  val bufferDataW = B(0, 64 bits)
+  io.bus.cmd.data := buffer.readWriteSync(
+    address = bufferAddr.value,
+    write = bufferWriteEnable,
+    data = bufferDataW,
+    enable = bufferWriteEnable | bufferReadEnable
+  )
+
+  val maskSpikeCnt = Counter(64 / 4)
+  val spikeMask = io.maskSpike.payload.subdivideIn(4 bits)(maskSpikeCnt).asBits
+  io.maskSpike.ready := maskSpikeCnt.willOverflow
+
+  Misc.clearIO(io)
+
+  val spikeWbFsm = new StateMachine {
+    val wb0 = new State with EntryPoint
+    val wb1, wb2 = new State
+
+    wb0.whenIsActive{
+      when(io.bus.cmd.isFree){
+        bufferAddr.increment()
+        bufferReadEnable := True
+        goto(wb1)
+      }
+    }
+    wb1.whenIsActive {
+      io.bus.cmd.valid := True
+      when(io.bus.cmd.ready){
+        bufferAddr.increment()
+        bufferReadEnable := True
+        when(bufferAddr===io.bus.cmd.len){
+          bufferAddr.clear()
+          goto(wb2)
+        }
+      }
+    }
+    wb2.whenIsActive {
+      io.bus.cmd.valid := True
+      when(io.bus.cmd.ready){
+        exitFsm()
+      }
+    }
   }
-  stub()
+
+  val fsm = new StateMachine {
+    val idle = makeInstantEntry()
+    val preSpikeRead = new State
+    val preSpikeShift = new State
+    val preWb = new StateFsm(spikeWbFsm)
+    val waitPostSpike = new State
+    val postSpikeRead = new State
+    val postSpikeUpdate = new State
+    val postWb= new StateFsm(spikeWbFsm)
+    val done = new State
+
+    def spikeRead(len: UInt, addrBase: BigInt, next: State): Unit = {
+      io.bus.cmd.valid := True
+      io.bus.cmd.len := len.resized
+      io.bus.cmd.address := addrBase
+      when(io.bus.cmd.ready) {
+        goto(next)
+      }
+    }
+
+    def spikeUpdate(next: State)(action: (Bits, Int) => Bits): Unit ={
+      io.bus.rsp.ready := True
+      when(io.bus.rsp.valid) {
+        bufferWriteEnable := True
+        bufferAddr.increment()
+        when(io.bus.rsp.last) {
+          bufferAddr.clear()
+          goto(next)
+        }
+      }
+
+      for(i <- 0 until 4){
+        val s = io.bus.rsp.payload(i*16, 16 bits)
+        bufferDataW(i*16, 16 bits) := action(s, i)
+      }
+    }
+
+    idle
+      .whenIsActive{
+        when(io.run.valid){
+          goto(preSpikeRead)
+        }
+      }
+
+    preSpikeRead
+      .whenIsActive{
+        spikeRead(io.preLen, AddrMapping.preSpike.base, preSpikeShift)
+      }
+
+    postSpikeRead
+      .whenIsActive {
+        spikeRead(io.postLen, AddrMapping.postSpike.base, postSpikeUpdate)
+      }
+
+    preSpikeShift
+      .whenIsActive{
+        spikeUpdate(preWb)((s, _) => (s<<1).resize(16))
+      }
+
+    postSpikeUpdate
+      .whenIsActive{
+        spikeUpdate(postWb)((s, i) => s.dropLow(1) ## spikeMask(i))
+        when(io.bus.rsp.fire) {
+          maskSpikeCnt.increment()
+        }
+      }
+
+    preWb
+      .whenIsActive{
+        io.bus.cmd.len := io.preLen.resized
+        io.bus.cmd.write := True
+        io.bus.cmd.address := AddrMapping.preSpike.base
+      }
+      .whenCompleted{
+        goto(waitPostSpike)
+      }
+
+    postWb
+      .whenIsActive{
+        io.bus.cmd.len := io.postLen.resized
+        io.bus.cmd.write := True
+        io.bus.cmd.address := AddrMapping.postSpike.base
+      }
+      .whenCompleted {
+        goto(done)
+      }
+
+    waitPostSpike
+      .whenIsActive{
+        when(io.maskSpike.valid){
+          goto(postSpikeRead)
+        }
+      }
+
+    done
+      .whenIsActive{
+        io.run.ready := True
+        goto(idle)
+      }
+  }
 }

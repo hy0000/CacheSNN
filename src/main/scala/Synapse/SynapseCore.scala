@@ -1,7 +1,7 @@
 package Synapse
 
 import CacheSNN.{AER, NocCore}
-import Synapse.SynapseCore.timeWindowWidth
+import Synapse.SynapseCore.{maxPreSpike, timeWindowWidth}
 import Util.MemAccessBusConfig
 import spinal.core._
 import spinal.lib._
@@ -82,6 +82,7 @@ object CacheConfig {
 
 case class SynapseCsr() extends Bundle {
   val len = UInt(CacheConfig.wordOffsetWidth bits)
+  val preLen = UInt(maxPreSpike / 4 bits)
   val learning = Bool()
   val refractory = UInt(CacheConfig.tagTimestampWidth bits)
   val flush = Bool()
