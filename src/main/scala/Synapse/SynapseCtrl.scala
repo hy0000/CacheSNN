@@ -234,9 +234,13 @@ class SpikeUpdater extends Component {
 
     wb0.whenIsActive{
       when(io.bus.cmd.isFree){
-        bufferAddr.increment()
         bufferReadEnable := True
-        goto(wb1)
+        when(bufferAddr===io.bus.cmd.len){
+          goto(wb2)
+        }otherwise{
+          bufferAddr.increment()
+          goto(wb1)
+        }
       }
     }
     wb1.whenIsActive {
@@ -319,7 +323,7 @@ class SpikeUpdater extends Component {
 
     postSpikeUpdate
       .whenIsActive{
-        spikeUpdate(postWb)((s, i) => s.dropLow(1) ## spikeMask(i))
+        spikeUpdate(postWb)((s, i) => s.dropHigh(1) ## spikeMask(i))
         when(io.bus.rsp.fire) {
           maskSpikeCnt.increment()
         }
