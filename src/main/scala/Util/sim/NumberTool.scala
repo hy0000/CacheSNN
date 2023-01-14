@@ -49,4 +49,12 @@ object NumberTool {
       y
     }
   }
+
+  def rawToInt(x: Int, width: Int): Int ={
+    if(x>>(width-1)==0){
+      x
+    }else{
+      x | ((-1)<<width)
+    }
+  }
 }
