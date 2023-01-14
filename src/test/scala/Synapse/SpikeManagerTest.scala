@@ -2,7 +2,7 @@ package Synapse
 
 import CacheSNN.{AER, AerPacket}
 import CacheSNN.CacheSnnTest._
-import CacheSNN.sim.{AerDriver, AerMonitor, AerPacketSim}
+import CacheSNN.sim.{AerDriver, AerMonitor, AerPacketManager, AerPacketSim}
 import Util.sim.MemAccessBusMemSlave
 import Util.sim.NumberTool._
 import org.scalatest.funsuite.AnyFunSuite
@@ -503,56 +503,15 @@ class MissSpikeManagerTest extends AnyFunSuite {
 
 class SpikeManagerTest extends AnyFunSuite {
   val complied = simConfig.compile(new SpikeManager)
-
   val dim = 1024
   val len = 128
-
-  case class AerDataManager(dut: SpikeManager){
-    val memSpikeData = Array.tabulate(dim, len) {
-      (nid, offset) => BigInt(nid)*100000000 + offset*10000
-    }
-
-    val aerDriver = AerDriver(dut.io.aerIn, dut.clockDomain)
-
-    case class AerHeadSim(nid: Int, eventType: AER.TYPE.E)
-
-    val aerHeadQueue = mutable.Queue[AerHeadSim]()
-    val aerBodyQueue = mutable.Queue[BigInt]()
-
-    StreamMonitor(dut.io.aerOut.head, dut.clockDomain) { head =>
-      val headSim = AerHeadSim(head.nid.toInt, head.eventType.toEnum)
-      aerHeadQueue.enqueue(headSim)
-    }
-    StreamMonitor(dut.io.aerOut.body, dut.clockDomain) { body =>
-      aerBodyQueue.enqueue(body.fragment.toBigInt)
-    }
-    StreamReadyRandomizer(dut.io.aerOut.head, dut.clockDomain)
-    StreamReadyRandomizer(dut.io.aerOut.body, dut.clockDomain)
-
-
-    fork {
-      while (true){
-        dut.clockDomain.waitSamplingWhere(aerHeadQueue.nonEmpty)
-        val head = aerHeadQueue.dequeue()
-        if(head.eventType==AER.TYPE.W_WRITE){
-          dut.clockDomain.waitSamplingWhere(aerBodyQueue.length>=len)
-          for (i <- 0 until len) {
-            memSpikeData(head.nid)(i) = aerBodyQueue.dequeue()
-          }
-        }else{ // W_FETCH
-          val p = AerPacketSim(0, 0, 0, AER.TYPE.W_WRITE, head.nid, memSpikeData(head.nid))
-          aerDriver.sendPacket(p)
-        }
-      }
-    }
-  }
 
   test("test"){
     complied.doSim {dut =>
       dut.clockDomain.forkStimulus(2)
       SimTimeout(1000000)
 
-      val dataManager = AerDataManager(dut)
+      val dataManager = AerPacketManager(dut.io.aerIn, dut.io.aerOut, dut.clockDomain, dim, len)
       val memTruth = dataManager.memSpikeData.transpose.transpose // deep copy
       val cache = MemAccessBusMemSlave(dut.io.bus, dut.clockDomain, 3)
       val (spikeDriver, spikeQueue) = StreamDriver.queue(dut.io.spike, dut.clockDomain)
