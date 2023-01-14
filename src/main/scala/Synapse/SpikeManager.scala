@@ -28,15 +28,16 @@ class SpikeManager extends Component {
   val hitQueue = StreamFifo(new SpikeEvent, 128)
   val missQueue = StreamFifo(MissSpike(), 128)
   val readyQueue = StreamFifo(new SpikeEvent, 4)
+  val failSpikeStage = spikeCacheManager.io.failSpike.halfPipe()
 
   io.flush >> spikeCacheManager.io.flush
-  io.free := missManager.io.free && spikeCnt===0
+  io.free := missManager.io.free && spikeCnt===0 && !failSpikeStage.valid
   spikeCacheManager.io.csr := io.csr
   spikeCacheManager.io.timestamp := io.timestamp
   missManager.io.len := io.csr.len.resized
 
-  spikeQueue.io.push << StreamArbiterFactory.lowerFirst
-    .on(Seq(spikeCacheManager.io.failSpike, io.spike))
+  spikeQueue.io.push << StreamArbiterFactory.lowerFirst.noLock
+    .on(Seq(failSpikeStage, io.spike))
   spikeCacheManager.io.spikeIn << spikeQueue.io.pop
   spikeCacheManager.io.hitSpike >> hitQueue.io.push
   spikeCacheManager.io.missSpike >> missQueue.io.push
