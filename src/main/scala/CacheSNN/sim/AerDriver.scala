@@ -30,4 +30,9 @@ case class AerDriver(aer:AerPacket, clockDomain: ClockDomain) {
       sendPacket(p)
     }
   }
+
+  def waitDone(): Unit ={
+    clockDomain.waitSamplingWhere(headQueue.isEmpty)
+    clockDomain.waitSamplingWhere(bodyQueue.isEmpty)
+  }
 }
