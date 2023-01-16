@@ -1,10 +1,14 @@
 package Synapse
 
+import CacheSNN.AER
 import CacheSNN.CacheSnnTest._
+import CacheSNN.sim.AerPacketManager
 import Synapse.SynapseCore.AddrMapping
 import Util.sim.MemAccessBusMemSlave
 import Util.sim.NumberTool._
 import org.scalatest.funsuite.AnyFunSuite
+import spinal.core
+import spinal.core.log2Up
 import spinal.core.sim._
 import spinal.lib.sim.{FlowDriver, StreamDriver, StreamMonitor, StreamReadyRandomizer}
 
@@ -143,6 +147,162 @@ class SpikeUpdaterTest extends AnyFunSuite {
   }
 }
 
-class SynapseCtrlTest {
+/*
+pre spike trigger current++ and w++
+post spike trigger w--
+ */
+class SynapseCtrlTest extends AnyFunSuite {
+  val compiled = simConfig.compile(new SynapseCtrl)
 
+  val preLen = 1024 // fixed
+  val postLen = 512
+  case class SynapseCtrlAgent(dut:SynapseCtrl){
+    val bus = MemAccessBusMemSlave(dut.io.bus, dut.clockDomain, 3)
+    val aerManager = AerPacketManager(dut.io.aerIn, dut.io.aerOut, dut.clockDomain, preLen, postLen / 4)
+    val doneQueue = mutable.Queue[SpikeEventSim]()
+
+    StreamDriver(dut.io.spikeEventDone, dut.clockDomain) { s =>
+      if (doneQueue.nonEmpty && Random.nextInt(100) < 20) {
+        val spike = doneQueue.dequeue()
+        s.nid #= spike.nid
+        s.cacheLineAddr #= spike.cacheAddr
+        true
+      } else {
+        false
+      }
+    }
+
+    // init bus slave
+    for (i <- 0 until postLen) {
+      val currentAddr = AddrMapping.current.base.toLong + (i << 1)
+      bus.mem.writeBigInt(currentAddr, 0, 2)
+      val postSpikeAddr = AddrMapping.postSpike.base.toLong + (i << 1)
+      bus.mem.writeBigInt(postSpikeAddr, 0, 2)
+    }
+
+    StreamReadyRandomizer(dut.io.spikeEvent, dut.clockDomain)
+    // pre spike action
+    StreamMonitor(dut.io.spikeEvent, dut.clockDomain){ s =>
+      // add to done queue
+      doneQueue.enqueue(new SpikeEventSim(s.nid.toInt, s.cacheLineAddr.toInt))
+      // current ++
+      for(i <- 0 until postLen){
+        val addr = AddrMapping.current.base.toLong + (i<<1)
+        val current = bus.mem.readBigInt(addr, 2).toInt
+        val currentNew = rawToInt(current, 16) + 1
+        bus.mem.writeBigInt(addr, currentNew, 2)
+      }
+
+      if(dut.io.csr.learning.toBoolean){
+        // weight change
+        val addrShift = log2Up(CacheConfig.size / CacheConfig.lines)
+        for (i <- 0 until  postLen) {
+          val addr = (s.cacheLineAddr.toLong<<addrShift) | (i << 1)
+          val weight = bus.mem.readBigInt(addr, 2).toInt
+          val postSpikeAddr = AddrMapping.postSpike.base.toLong + (i << 1)
+          val postSpike = bus.mem.readBigInt(postSpikeAddr, 2).toInt & 0x1
+          val weightNew = rawToInt(weight, 16) + 1 - postSpike
+          bus.mem.writeBigInt(addr, weightNew, 2)
+        }
+      }
+    }
+
+    fork {
+      while (true) {
+        dut.clockDomain.waitSamplingWhere(
+          dut.io.aerOut.head.valid.toBoolean && dut.io.aerOut.head.ready.toBoolean &&
+          dut.io.aerOut.head.eventType.toEnum==AER.TYPE.CURRENT
+        )
+
+      }
+    }
+
+    def flush(): Unit = {
+      dut.io.csr.flush #= true
+      dut.clockDomain.waitSamplingWhere(dut.io.flushed.toBoolean)
+      dut.io.csr.flush #= false
+    }
+
+    def waiteDone(): Unit = {
+      aerManager.aerDriver.waitDone()
+      dut.clockDomain.waitSampling(2)
+      dut.clockDomain.waitSamplingWhere(dut.io.free.toBoolean)
+    }
+
+    def waitCurrentPacketSend(): Unit ={
+      dut.clockDomain.waitSamplingWhere(
+        dut.io.aerOut.head.valid.toBoolean && dut.io.aerOut.head.ready.toBoolean &&
+          dut.io.aerOut.head.eventType.toEnum == AER.TYPE.CURRENT
+      )
+      dut.clockDomain.waitSamplingWhere(
+        dut.io.aerOut.body.valid.toBoolean && dut.io.aerOut.body.ready.toBoolean &&
+          dut.io.aerOut.body.last.toBoolean
+      )
+      dut.clockDomain.waitSampling()
+    }
+
+    def assertCurrentCleared(): Unit = {
+      for (i <- 0 to dut.io.csr.len.toInt) {
+        val addr = AddrMapping.current.base.toLong + (i << 2)
+        val current = bus.mem.readBigInt(addr, 2).toInt
+        assert(current==0, s"${current.toHexString} at ${addr.toHexString}")
+      }
+    }
+
+    def assertCurrentTruth(preSpikes: Array[Array[Int]]): Unit ={
+      val currentTruth = preSpikes.transpose.map(_.sum)
+      val currentTruthRaw = vToRawV(currentTruth, 16, 4)
+      for(i <- 0 to dut.io.csr.len.toInt){
+        assert(
+          aerManager.currentData(i)==currentTruthRaw(i),
+          s"${aerManager.currentData(i).toString(16)} ${currentTruthRaw(i).toString(16)} at $i"
+        )
+      }
+    }
+  }
+
+  def initDut(dut: SynapseCtrl): SynapseCtrlAgent ={
+    dut.clockDomain.forkStimulus(2)
+    SimTimeout(5000000)
+    dut.io.csr.learning #= false
+    dut.io.csr.refractory #= 1
+    dut.io.csr.preLen #= preLen / 4 - 1
+    dut.io.csr.len #= postLen / 4 - 1
+    dut.io.csr.postNidBase #= 0
+    dut.io.csr.flush #= false
+    SynapseCtrlAgent(dut)
+  }
+
+  test("flush test"){
+    compiled.doSim{ dut =>
+      val agent = initDut(dut)
+      agent.flush()
+    }
+  }
+
+  test("inference only test"){
+    compiled.doSim { dut =>
+      val agent = initDut(dut)
+      agent.flush()
+      val epoch = 1
+      val nidBase = 0
+      val preSpike = Array.tabulate(epoch, preLen){
+        (_, _) => if(Random.nextInt(10) < 1) 1 else 0
+      }
+
+      for((s, t) <- preSpike.zipWithIndex){
+        agent.aerManager.sendSpike(s, nidBase, AER.TYPE.PRE_SPIKE)
+        agent.waiteDone()
+        agent.assertCurrentCleared()
+      }
+
+      val totalSpike = preSpike.flatten.sum
+      for (i <- 0 to dut.io.csr.len.toInt) {
+        val current = rawToV(agent.aerManager.currentData(i), 16, 4)
+        current.foreach{ c =>
+          assert(c==totalSpike, s"$i")
+        }
+      }
+    }
+  }
 }

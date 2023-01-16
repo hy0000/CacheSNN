@@ -18,6 +18,7 @@ class SynapseCtrl extends Component {
     val spikeEvent = master(Stream(new SpikeEvent))
     val spikeEventDone = slave(Stream(new SpikeEvent))
     val free = out(Bool())
+    val flushed = out(Bool())
   }
 
   val spikeManager = new SpikeManager
@@ -25,7 +26,10 @@ class SynapseCtrl extends Component {
   val spikeUpdater = new SpikeUpdater
 
   val timestamp = Counter(CacheConfig.tagTimestampWidth bits)
-  val aerHeadReg = cloneOf(io.aerIn.head.payload) setAsReg()
+  val clearCnt = Counter(io.csr.len.getWidth bits)
+  val flushed, currentRst = RegInit(False)
+
+  io.flushed := flushed
 
   spikeManager.io.timestamp := timestamp
   spikeManager.io.csr := io.csr
@@ -43,7 +47,7 @@ class SynapseCtrl extends Component {
 
     readCmd.whenIsActive{
       io.bus.cmd.valid := True
-      io.bus.cmd.address := AddrMapping.postSpike.base
+      io.bus.cmd.address := AddrMapping.current.base
       io.bus.cmd.write := False
       io.bus.cmd.len := io.csr.len.resized
       when(io.bus.cmd.ready){
@@ -70,18 +74,21 @@ class SynapseCtrl extends Component {
 
   val fsm = new StateMachine {
     val idle = makeInstantEntry()
-    val flush = new State
+    val flush0, flush1 = new State
     val bufferSpike = new State
     val compute = new State
     val current = new StateFsm(currentFsm)
+    val currentClear = new State
     val spikeUpdate = new State
 
     idle.whenIsActive {
       io.free := True
       io.aerIn.head.ready := True
       when(io.aerIn.head.valid){
-        aerHeadReg := io.aerIn.head.payload
+        flushed := False
         goto(bufferSpike)
+      }elsewhen(io.csr.flush && !flushed){
+        goto(flush0)
       }
     }
 
@@ -104,10 +111,21 @@ class SynapseCtrl extends Component {
     }
 
     current.whenCompleted{
-      when(io.csr.learning){
-        goto(spikeUpdate)
-      }otherwise{
-        goto(idle)
+      goto(currentClear)
+    }
+
+    currentClear.whenIsActive {
+      io.bus.cmd.valid := True
+      io.bus.cmd.write := True
+      io.bus.cmd.data := 0
+      io.bus.cmd.len := io.csr.len.resized
+      io.bus.cmd.address := AddrMapping.current.base
+      when(io.bus.cmd.fire) {
+        clearCnt.increment()
+        when(clearCnt === io.csr.len) {
+          clearCnt.clear()
+          goto(idle)
+        }
       }
     }
 
@@ -116,17 +134,20 @@ class SynapseCtrl extends Component {
       spikeUpdater.io.maskSpike << io.aerIn.body.translateWith(io.aerIn.body.fragment)
       spikeUpdater.io.bus <> io.bus
       when(spikeUpdater.io.run.ready){
-        when(io.csr.flush){
-          goto(flush)
-        }otherwise{
-          goto(idle)
-        }
+        goto(idle)
       }
     }
 
-    flush.whenIsActive{
+    flush0.whenIsActive{
       spikeManager.io.flush.valid := True
       when(spikeManager.io.flush.ready){
+        goto(flush1)
+      }
+    }
+
+    flush1.whenIsActive{
+      when(spikeManager.io.free){
+        flushed := True
         goto(idle)
       }
     }
