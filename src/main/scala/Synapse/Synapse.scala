@@ -161,7 +161,7 @@ class Synapse extends Component {
       io.current.write.valid := valid
       io.current.write.address := ADDR_INCR.resized
       io.current.write.data := CURRENT
-      eventDone.valid := DONE
+      eventDone.valid := DONE && valid
       eventDone.nid := NID
       eventDone.cacheLineAddr := CACHE_ADDR>>io.csr.len.getWidth
     }
