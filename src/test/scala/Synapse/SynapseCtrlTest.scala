@@ -263,7 +263,7 @@ class SynapseCtrlTest extends AnyFunSuite {
 
   def initDut(dut: SynapseCtrl): SynapseCtrlAgent ={
     dut.clockDomain.forkStimulus(2)
-    SimTimeout(5000000)
+    SimTimeout(10000000)
     dut.io.csr.learning #= false
     dut.io.csr.refractory #= 1
     dut.io.csr.preLen #= preLen / 4 - 1
@@ -284,7 +284,7 @@ class SynapseCtrlTest extends AnyFunSuite {
     compiled.doSim { dut =>
       val agent = initDut(dut)
       agent.flush()
-      val epoch = 1
+      val epoch = 20
       val nidBase = 0
       val preSpike = Array.tabulate(epoch, preLen){
         (_, _) => if(Random.nextInt(10) < 1) 1 else 0
