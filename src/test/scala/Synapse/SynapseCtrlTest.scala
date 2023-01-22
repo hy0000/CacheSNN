@@ -207,16 +207,6 @@ class SynapseCtrlTest extends AnyFunSuite {
       }
     }
 
-    fork {
-      while (true) {
-        dut.clockDomain.waitSamplingWhere(
-          dut.io.aerOut.head.valid.toBoolean && dut.io.aerOut.head.ready.toBoolean &&
-          dut.io.aerOut.head.eventType.toEnum==AER.TYPE.CURRENT
-        )
-
-      }
-    }
-
     def flush(): Unit = {
       dut.io.csr.flush #= true
       dut.clockDomain.waitSamplingWhere(dut.io.flushed.toBoolean)
@@ -301,6 +291,80 @@ class SynapseCtrlTest extends AnyFunSuite {
         val current = rawToV(agent.aerManager.currentData(i), 16, 4)
         current.foreach{ c =>
           assert(c==totalSpike, s"$i")
+        }
+      }
+    }
+  }
+
+  test("learning test"){
+    compiled.doSim { dut =>
+      val agent = initDut(dut)
+      agent.flush()
+      dut.io.csr.learning #= true
+      for (i <- 0 until preLen) {
+        for (j <- 0 until postLen / 4) {
+          agent.aerManager.memSpikeData(i)(j) = BigInt(0x00FF00FF00FF00FFL)
+        }
+      }
+
+      val epoch = 2
+      val preSpike = Array.tabulate(epoch, preLen) {
+        (_, _) => if (Random.nextInt(10) < 1) 1 else 0
+      }
+      val postSpike = Array.tabulate(epoch, postLen) {
+        (_, _) => 1//if (Random.nextInt(10) < 1) 1 else 0
+      }
+
+      for (t <- 0 until epoch) {
+        agent.aerManager.sendSpike(preSpike(t), 0, AER.TYPE.PRE_SPIKE)
+        agent.waitCurrentPacketSend()
+        agent.aerManager.sendSpike(postSpike(t),  0, AER.TYPE.POST_SPIKE)
+        agent.waiteDone()
+        agent.assertCurrentCleared()
+      }
+
+      val totalSpike = preSpike.flatten.sum
+      for (i <- 0 to dut.io.csr.len.toInt) {
+        val current = rawToV(agent.aerManager.currentData(i), 16, 4)
+        current.foreach { c =>
+          assert(c == totalSpike, s"$i")
+        }
+      }
+
+      agent.flush()
+      agent.waiteDone()
+
+      val weightTruth = Array.tabulate(preLen, postLen) {
+        (_, _) => 0xFF
+      }
+      for(t <- 0 until epoch){
+        for (preNid <- 0 until preLen) {
+          if (preSpike(t)(preNid) != 0) {
+            for (postNid <- 0 until postLen) {
+              weightTruth(preNid)(postNid) += 1
+              if (t > 0){
+                weightTruth(preNid)(postNid) -= postSpike(t - 1)(postNid)
+              }
+            }
+          }
+        }
+      }
+
+      for (preNid <- 0 until preLen) {
+        for (postNid <- 0 until postLen) {
+          val wRaw = agent.aerManager.memSpikeData(preNid)(postNid / 4)
+          val w = rawToV(wRaw, 16, 4)(postNid % 4)
+          val wTruth = weightTruth(preNid)(postNid)
+          assert(w==wTruth, s"$w $wTruth at $preNid $postNid raw-${wRaw.toString(16)}")
+        }
+      }
+
+      for (preNid <- 0 until preLen) {
+        for (i <- 0 until postLen / 4) {
+          if(i==preNid){
+            val wRaw = agent.aerManager.memSpikeData(preNid)(i)
+            println(s"pre-$preNid post-$i raw-${wRaw.toString(16)}")
+          }
         }
       }
     }

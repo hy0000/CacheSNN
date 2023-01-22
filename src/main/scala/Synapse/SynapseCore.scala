@@ -82,7 +82,7 @@ object CacheConfig {
 
 case class SynapseCsr() extends Bundle {
   val len = UInt(CacheConfig.wordOffsetWidth bits)
-  val preLen = UInt(maxPreSpike / 4 bits)
+  val preLen = UInt(log2Up(maxPreSpike / 4) bits)
   val learning = Bool()
   val refractory = UInt(CacheConfig.tagTimestampWidth bits)
   val flush = Bool()

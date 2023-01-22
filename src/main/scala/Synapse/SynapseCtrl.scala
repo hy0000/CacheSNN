@@ -27,7 +27,7 @@ class SynapseCtrl extends Component {
 
   val timestamp = Counter(CacheConfig.tagTimestampWidth bits)
   val clearCnt = Counter(io.csr.len.getWidth bits)
-  val flushed, currentRst = RegInit(False)
+  val flushed = RegInit(False)
 
   io.flushed := flushed
 
@@ -37,6 +37,9 @@ class SynapseCtrl extends Component {
   spikeManager.io.spikeEvent >> io.spikeEvent
   spikeManager.io.spikeEventDone << io.spikeEventDone
   spikeManager.io.aerOut <> io.aerOut
+
+  spikeUpdater.io.preLen := io.csr.preLen
+  spikeUpdater.io.postLen := io.csr.len
 
   Misc.clearIO(io)
   Misc.idleIo(spikeManager.io, spikeDecoder.io, spikeUpdater.io)
@@ -86,7 +89,10 @@ class SynapseCtrl extends Component {
       io.aerIn.head.ready := True
       when(io.aerIn.head.valid){
         flushed := False
-        goto(bufferSpike)
+        switch(io.aerIn.head.eventType){
+          is(AER.TYPE.PRE_SPIKE){ goto(bufferSpike) }
+          is(AER.TYPE.POST_SPIKE){ goto(spikeUpdate) }
+        }
       }elsewhen(io.csr.flush && !flushed){
         goto(flush0)
       }
@@ -140,12 +146,14 @@ class SynapseCtrl extends Component {
 
     flush0.whenIsActive{
       spikeManager.io.flush.valid := True
+      spikeManager.io.bus <> io.bus
       when(spikeManager.io.flush.ready){
         goto(flush1)
       }
     }
 
     flush1.whenIsActive{
+      spikeManager.io.bus <> io.bus
       when(spikeManager.io.free){
         flushed := True
         goto(idle)
