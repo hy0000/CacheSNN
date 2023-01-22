@@ -6,15 +6,6 @@ import spinal.core.sim._
 import spinal.lib._
 import spinal.lib.sim.StreamDriver
 
-case class NocPacket(dest:Int,
-                     src:Int,
-                     custom:BigInt,
-                     data:Seq[BigInt] = Seq()){
-  def head: BigInt = (dest.toBigInt << 60) | (src.toBigInt << 52) | custom
-
-  def headOnly: Boolean = data.isEmpty
-}
-
 class NocInterfaceDriver(noc:Stream[Fragment[NocInterface]], clockDomain: ClockDomain){
 
   val (driver, queue) = StreamDriver.queue(noc, clockDomain)

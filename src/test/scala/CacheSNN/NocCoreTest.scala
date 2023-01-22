@@ -2,7 +2,7 @@ package CacheSNN
 
 import CacheSnnTest.simConfig
 import sim._
-import RingNoC.sim.{NocInterfaceDriver, NocInterfaceMonitor, NocPacket}
+import RingNoC.sim.{NocInterfaceDriver, NocInterfaceAsserter, NocPacket}
 import Util.sim.MemAccessBusMemSlave
 import org.scalatest.funsuite.AnyFunSuite
 import spinal.core.sim._
@@ -23,14 +23,14 @@ class NocCoreTest extends AnyFunSuite {
   val complied = simConfig.compile(new NocCoreInst)
 
   case class NocCoreAgent(nocRecDriver: NocInterfaceDriver,
-                          nocSendMonitor: NocInterfaceMonitor)
+                          nocSendMonitor: NocInterfaceAsserter)
 
   test("packet send test"){
     complied.doSim{ dut =>
       dut.clockDomain.forkStimulus(2)
       SimTimeout(10000)
       dut.noc.rec.valid #= false
-      val nocSendMonitor = new NocInterfaceMonitor(dut.noc.send, dut.clockDomain)
+      val nocSendMonitor = new NocInterfaceAsserter(dut.noc.send, dut.clockDomain)
       val localSendDriver = new NocInterfaceDriver(dut.interface.localSend, dut.clockDomain)
 
       val packets = Seq.fill(10){
@@ -54,7 +54,7 @@ class NocUnPackerTest extends AnyFunSuite {
   val src = 2
 
   case class NocUnPackerAgent(nocRecDriver: NocInterfaceDriver,
-                              nocSendMonitor: NocInterfaceMonitor,
+                              nocSendMonitor: NocInterfaceAsserter,
                               regBusSlave: Apb3MemSlave,
                               dataBusSlave: MemAccessBusMemSlave,
                               aerMonitor: AerMonitor
@@ -69,7 +69,7 @@ class NocUnPackerTest extends AnyFunSuite {
       }
     }
     val nocRecDriver = new NocInterfaceDriver(dut.io.nocRec, dut.clockDomain)
-    val nocRspMonitor = new NocInterfaceMonitor(dut.io.rspSend, dut.clockDomain)
+    val nocRspMonitor = new NocInterfaceAsserter(dut.io.rspSend, dut.clockDomain)
     val regBusSlave = Apb3MemSlave(dut.io.regBus, dut.clockDomain)
     val dataBusSlave = MemAccessBusMemSlave(dut.io.dataBus, dut.clockDomain, 3)
     val aerMonitor = AerMonitor(dut.io.aer, dut.clockDomain)
