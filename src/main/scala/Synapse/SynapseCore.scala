@@ -154,18 +154,27 @@ class SynapseCore extends NocCore {
 
   val regArea = new Area {
     val csr = SynapseCsr()
-
-    val busIf = Apb3BusInterface(interface.regBus, SizeMapping(0, 256 Byte), 0, "synapseCoreReg")
+    val busIf = Apb3BusInterface(interface.regBus, SizeMapping(0, 256 Byte), 0, "")
     val HIT_CNT = busIf.newReg("hit count")
     val FIELD0  = busIf.newReg("field 0")
     val FIELD1  = busIf.newReg("field 1")
+    val FIELD2  = busIf.newReg("field 2")
 
     HIT_CNT.field(UInt(16 bits), RW, "hit count")
-    csr.len        := FIELD0.field(UInt(7 bits), WO, "len")
-    csr.learning   := FIELD0.field(Bool, WO, "learning")
-    csr.refractory := FIELD0.field(UInt(CacheConfig.tagTimestampWidth bits), WO, "refractory")
+    val postNidBase = FIELD0.field(UInt(16 bits), WO, "postNidBase")
+    val preLen      = FIELD0.field(UInt(8 bits), WO, "preLen")
+    val postLen     = FIELD0.field(UInt(7 bits), WO, "postLen")
     val neuronCoreId = FIELD1.field(UInt(4 bits), WO, "neuronCoreId")
+    val flush      = FIELD2.field(Bool(), WO, "flush")
+    val learning   = FIELD2.field(Bool, WO, "learning")
+    val refractory = FIELD2.field(UInt(CacheConfig.tagTimestampWidth bits), WO, "refractory")
 
+    csr.postNidBase := postNidBase
+    csr.preLen := preLen
+    csr.len := postLen
+    csr.flush := flush
+    csr.learning := learning
+    csr.refractory := refractory
     busIf.accept(HtmlGenerator("regIf", "synapseCore"))
   }
 
