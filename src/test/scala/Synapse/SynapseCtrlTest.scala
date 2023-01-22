@@ -7,8 +7,7 @@ import Synapse.SynapseCore.AddrMapping
 import Util.sim.MemAccessBusMemSlave
 import Util.sim.NumberTool._
 import org.scalatest.funsuite.AnyFunSuite
-import spinal.core
-import spinal.core.log2Up
+import spinal.core._
 import spinal.core.sim._
 import spinal.lib.sim.{FlowDriver, StreamDriver, StreamMonitor, StreamReadyRandomizer}
 
@@ -312,7 +311,7 @@ class SynapseCtrlTest extends AnyFunSuite {
         (_, _) => if (Random.nextInt(10) < 1) 1 else 0
       }
       val postSpike = Array.tabulate(epoch, postLen) {
-        (_, _) => 1//if (Random.nextInt(10) < 1) 1 else 0
+        (_, _) => if (Random.nextInt(10) < 1) 1 else 0
       }
 
       for (t <- 0 until epoch) {
@@ -356,15 +355,6 @@ class SynapseCtrlTest extends AnyFunSuite {
           val w = rawToV(wRaw, 16, 4)(postNid % 4)
           val wTruth = weightTruth(preNid)(postNid)
           assert(w==wTruth, s"$w $wTruth at $preNid $postNid raw-${wRaw.toString(16)}")
-        }
-      }
-
-      for (preNid <- 0 until preLen) {
-        for (i <- 0 until postLen / 4) {
-          if(i==preNid){
-            val wRaw = agent.aerManager.memSpikeData(preNid)(i)
-            println(s"pre-$preNid post-$i raw-${wRaw.toString(16)}")
-          }
         }
       }
     }
