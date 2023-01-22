@@ -306,7 +306,7 @@ class SynapseCtrlTest extends AnyFunSuite {
         }
       }
 
-      val epoch = 2
+      val epoch = 20
       val preSpike = Array.tabulate(epoch, preLen) {
         (_, _) => if (Random.nextInt(10) < 1) 1 else 0
       }
