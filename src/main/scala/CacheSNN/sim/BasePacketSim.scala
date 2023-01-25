@@ -36,6 +36,32 @@ case class BasePacketSim(dest:Int,
 }
 
 object BasePacketSim {
+  def apply(p:NocPacket): BasePacketSim ={
+    val packetTypeRaw = (p.custom>>45).toInt
+    val packetType: PacketType.E = packetTypeRaw match {
+      case 0 => PacketType.R_CMD
+      case 1 => PacketType.R_RSP
+      case 2 => PacketType.D_CMD
+      case 3 => PacketType.D_RSP
+      case 4 => PacketType.AER
+      case 5 => PacketType.ERROR
+    }
+    val write = (p.custom >> 44).toInt == 1
+    val field1 = (p.custom >> 36) & 0xFF
+    val id = (p.custom >> 32).toInt & 0xF
+    val field2 = p.custom & ((1 << 32) - 1)
+    new BasePacketSim(
+      dest = p.dest,
+      src = p.src,
+      packetType = packetType,
+      write = write,
+      id = id,
+      field1 = field1,
+      field2 = field2,
+      data = p.data
+    )
+  }
+
   implicit def toRawPacket(bp:BasePacketSim): NocPacket = bp.toNocPacket
   implicit def toRawPackets(bps:Seq[BasePacketSim]): Seq[NocPacket] = bps.map(_.toNocPacket)
 
