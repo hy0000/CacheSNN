@@ -18,7 +18,7 @@ object NocPacket {
   def apply(head: BigInt, body:Seq[BigInt]): NocPacket ={
     val dest = (head >> 60).toInt
     val src = (head >> 52).toInt & 0xF
-    val custom = head & ((1<<48) - 1)
+    val custom = head & ((BigInt(1)<<48) - 1)
     new NocPacket(dest = dest, src = src, custom = custom, data = body)
   }
 
