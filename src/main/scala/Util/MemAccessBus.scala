@@ -49,7 +49,7 @@ class MemAccessBusToPipeLineMemoryBus(c:MemAccessBusConfig) extends Component {
   }
   val inReadBurst = cmdS2m.valid && !cmdS2m.write && !last
   cmdS2m.ready := !inReadBurst && cmdFire
-  that.cmd.valid := cmdS2m.valid && io.input.rsp.ready
+  that.cmd.valid := cmdS2m.valid && io.input.rsp.isFree
   that.cmd.write := cmdS2m.write
   that.cmd.address := cmdS2m.address  + (addrIncr @@ U"000")
   that.cmd.data := cmdS2m.data
