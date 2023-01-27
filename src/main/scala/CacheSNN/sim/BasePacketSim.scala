@@ -37,7 +37,7 @@ case class BasePacketSim(dest:Int,
 
 object BasePacketSim {
   def apply(p:NocPacket): BasePacketSim ={
-    val packetTypeRaw = (p.custom>>45).toInt
+    val packetTypeRaw = (p.custom>>45).toInt & 0x7
     val packetType: PacketType.E = packetTypeRaw match {
       case 0 => PacketType.R_CMD
       case 1 => PacketType.R_RSP
@@ -46,7 +46,7 @@ object BasePacketSim {
       case 4 => PacketType.AER
       case 5 => PacketType.ERROR
     }
-    val write = (p.custom >> 44).toInt == 1
+    val write = ((p.custom >> 44).toInt & 0x1) == 1
     val field1 = (p.custom >> 36) & 0xFF
     val id = (p.custom >> 32).toInt & 0xF
     val field2 = p.custom & ((1 << 32) - 1)
