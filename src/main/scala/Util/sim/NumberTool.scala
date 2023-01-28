@@ -20,6 +20,10 @@ object NumberTool {
       .map { m => if ((m & msb) == 0) m else m - tyb }
   }
 
+  def rawToV(raw: Seq[BigInt], width: Int, n: Int): Seq[Int] = {
+    raw.flatMap(line => rawToV(line, width, n))
+  }
+
   def randomIntN(n: Int) = {
     val upBound = 1 << (n - 1)
     Random.nextInt(upBound * 2) - upBound
