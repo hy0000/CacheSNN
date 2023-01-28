@@ -49,7 +49,7 @@ object BasePacketSim {
     val write = ((p.custom >> 44).toInt & 0x1) == 1
     val field1 = (p.custom >> 36) & 0xFF
     val id = (p.custom >> 32).toInt & 0xF
-    val field2 = p.custom & ((1 << 32) - 1)
+    val field2 = (p.custom & ((BigInt(1) << 32) - 1)).toLong
     new BasePacketSim(
       dest = p.dest,
       src = p.src,
