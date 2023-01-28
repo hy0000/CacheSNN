@@ -155,12 +155,14 @@ class SynapseCore extends NocCore {
   val regArea = new Area {
     val csr = SynapseCsr()
     val busIf = Apb3BusInterface(interface.regBus, SizeMapping(0, 256 Byte), 0, "")
-    val HIT_CNT = busIf.newReg("hit count")
+    val FIELD_R = busIf.newReg("hit count")
     val FIELD0  = busIf.newReg("field 0")
     val FIELD1  = busIf.newReg("field 1")
     val FIELD2  = busIf.newReg("field 2")
 
-    HIT_CNT.field(UInt(16 bits), RW, "hit count")
+    FIELD_R.reserved(16 bits)
+    val free = FIELD_R.field(Bool, RO, "free")
+    free := synapseCtrl.io.free
     val postNidBase = FIELD0.field(UInt(16 bits), WO, "postNidBase")
     val preLen      = FIELD0.field(UInt(8 bits), WO, "preLen")
     val postLen     = FIELD0.field(UInt(7 bits), WO, "postLen")
