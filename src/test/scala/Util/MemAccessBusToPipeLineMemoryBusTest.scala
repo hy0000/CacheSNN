@@ -53,8 +53,8 @@ class MemAccessBusToPipeLineMemoryBusTest extends AnyFunSuite {
       dut.io.input.cmd.len #= len
       dut.io.input.cmd.write #= true
       dut.io.input.cmd.valid #= true
-      //StreamReadyRandomizer(dut.io.input.rsp, dut.clockDomain)
-      dut.io.input.rsp.ready #= true
+      StreamReadyRandomizer(dut.io.input.rsp, dut.clockDomain)
+      //dut.io.input.rsp.ready #= true
       for (i <- 0 to len) {
         dut.io.input.cmd.data #= i
         dut.clockDomain.waitSamplingWhere(dut.io.input.cmd.valid.toBoolean && dut.io.input.cmd.ready.toBoolean)

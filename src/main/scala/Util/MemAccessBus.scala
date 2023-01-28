@@ -42,14 +42,14 @@ class MemAccessBusToPipeLineMemoryBus(c:MemAccessBusConfig) extends Component {
   val that = cloneOf(io.output)
   val cmdFire = that.cmd.fire
   val addrIncr = Counter(cmd.len.getWidth bits, cmdFire)
-  val last = addrIncr === cmd.len
+  val last = addrIncr === cmdS2m.len
   val lastFire = last && cmdFire
   when(lastFire) {
     addrIncr.clear()
   }
-  val inReadBurst = cmdS2m.valid && !cmdS2m.write && !last
-  cmdS2m.ready := !inReadBurst && cmdFire
-  that.cmd.valid := cmdS2m.valid && io.input.rsp.isFree
+  val readBurstLast = !cmdS2m.write && last
+  cmdS2m.ready := (readBurstLast || cmdS2m.write) && cmdFire
+  that.cmd.valid := cmdS2m.valid && !io.input.rsp.isStall
   that.cmd.write := cmdS2m.write
   that.cmd.address := cmdS2m.address  + (addrIncr @@ U"000")
   that.cmd.data := cmdS2m.data
