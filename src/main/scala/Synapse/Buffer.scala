@@ -37,7 +37,7 @@ class Buffer(p:PipelinedMemoryBusConfig, size:BigInt) extends Component {
   val data = RegNext(ram.readSync(ramReadCmd.payload, ramReadCmd.valid))
   io.mem.read.rsp := data
   io.bus.rsp.data := data
-  io.bus.rsp.valid := Delay(ramReadCmd.valid, readDelay, init = False)
+  io.bus.rsp.valid := Delay(busReadCmd.fire, readDelay, init = False)
 }
 
 class Cache(p:PipelinedMemoryBusConfig) extends Component {
