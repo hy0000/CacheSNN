@@ -4,7 +4,7 @@ import CacheSNN.AER
 import CacheSNN.CacheSnnTest._
 import CacheSNN.sim._
 import RingNoC.NocInterfaceLocal
-import Synapse.SynapseCore.{AddrMapping, RegAddr, RegConfig}
+import Synapse.SynapseCore.{AddrMapping, RegAddr, RegConfig, maxPreSpike}
 import Util.SnnModel
 import Util.sim.NumberTool
 import org.scalatest.funsuite.AnyFunSuite
@@ -70,6 +70,11 @@ class SynapseCoreAgent(noc:NocInterfaceLocal, clockDomain: ClockDomain)
     regWrite(RegAddr.field2, RegConfig.Field2.learningFlush)
     waitFree()
   }
+
+  def sendPreSpike(maskSpike:Array[Int]): Unit ={
+    val spikeExtend = maskSpike ++ Array.fill(1024 - maskSpike.length)(0)
+    sendSpike(spikeExtend, 0, AER.TYPE.PRE_SPIKE)
+  }
 }
 
 class SynapseCoreTest extends AnyFunSuite {
@@ -113,7 +118,7 @@ class SynapseCoreTest extends AnyFunSuite {
       val snnModel = new SnnModel(preLen, postLen)
       for (t <- 0 until epoch) {
         snnModel.spikeForward(preSpike(t))
-        agent.sendSpike(preSpike(t), 0, AER.TYPE.PRE_SPIKE)
+        agent.sendPreSpike(preSpike(t))
         agent.waitCurrentReceived()
       }
       assert(agent.current sameElements snnModel.current)
@@ -139,7 +144,7 @@ class SynapseCoreTest extends AnyFunSuite {
       )
 
       for (t <- 0 until epoch) {
-        agent.sendSpike(preSpike(t), 0, AER.TYPE.PRE_SPIKE)
+        agent.sendPreSpike(preSpike(t))
         agent.waitCurrentReceived()
         agent.sendSpike(postSpike(t), 0, AER.TYPE.POST_SPIKE)
         if (t == epoch - 1) {
