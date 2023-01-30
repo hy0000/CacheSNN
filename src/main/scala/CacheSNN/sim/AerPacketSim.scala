@@ -27,7 +27,7 @@ object AerPacketSim {
       case 3 => AER.TYPE.POST_SPIKE
       case 4 => AER.TYPE.CURRENT
     }
-    new AerPacketSim(dest = bp.dest, src = bp.src, id = bp.id, eventType = eventType, nid = nid)
+    new AerPacketSim(dest = bp.dest, src = bp.src, id = bp.id, eventType = eventType, nid = nid, data = bp.data)
   }
   implicit def toRawPacket(bp: AerPacketSim): NocPacket = bp.toNocPacket
   implicit def toRawPackets(bps: Seq[AerPacketSim]): Seq[NocPacket] = bps.map(_.toNocPacket)
