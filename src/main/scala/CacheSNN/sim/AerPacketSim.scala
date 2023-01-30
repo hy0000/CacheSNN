@@ -21,11 +21,11 @@ object AerPacketSim {
     val eventTypeRaw = (bp.field2>>(16 + 13)).toInt
     val nid = (bp.field2 & ((1<<16) - 1)).toInt
     val eventType: AER.TYPE.E = eventTypeRaw match {
-      case 0 => AER.TYPE.PRE_SPIKE
-      case 1 => AER.TYPE.PRE_SPIKE
-      case 2 => AER.TYPE.CURRENT
-      case 3 => AER.TYPE.W_FETCH
-      case 4 => AER.TYPE.W_WRITE
+      case 0 => AER.TYPE.W_FETCH
+      case 1 => AER.TYPE.W_WRITE
+      case 2 => AER.TYPE.PRE_SPIKE
+      case 3 => AER.TYPE.POST_SPIKE
+      case 4 => AER.TYPE.CURRENT
     }
     new AerPacketSim(dest = bp.dest, src = bp.src, id = bp.id, eventType = eventType, nid = nid)
   }
