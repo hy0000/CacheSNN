@@ -135,6 +135,7 @@ class SynapseCore extends NocCore {
   val ltdLut = new ExpLut(slaveBusConfig("ltdLut"))
 
   val interconnect = PipelinedMemoryBusInterconnect()
+  interconnect.perfConfig()
 
   interconnect.addSlave(cache.io.bus, AddrMapping.cache)
   interconnect.addSlave(currentRam.io.bus, AddrMapping.current)
