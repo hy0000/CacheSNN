@@ -4,6 +4,7 @@ import RingNoC.sim._
 import spinal.lib._
 import CacheSNN.{AER, PacketType}
 import RingNoC.NocInterfaceLocal
+import Util.sim.NumberTool
 import spinal.core._
 import spinal.core.sim._
 import spinal.lib._
@@ -53,6 +54,12 @@ class BasePacketAgent(noc:NocInterfaceLocal, clockDomain: ClockDomain) {
     driver.sendPacket(bp)
     clockDomain.waitSamplingWhere(dataWriteRsp.nonEmpty)
     dataWriteRsp.dequeue()
+  }
+
+  def sendSpike(maskSpike: Array[Int], nidBase: Int, eventType: AER.TYPE.E): Unit = {
+    val data = NumberTool.vToRawV(maskSpike, 1, 64)
+    val p = AerPacketSim(dest, src, 0, eventType, nid = nidBase, data = data)
+    driver.sendPacket(p)
   }
 
   def onRegRSP(p: BasePacketSim): Unit = {
