@@ -62,7 +62,7 @@ class Synapse extends Component {
   import SynapseCore._
   val spikeBufferAddrWidth = log2Up(AddrMapping.postSpike.size / busByteCount)
   val currentBufferAddrWidth = log2Up(AddrMapping.current.size / busByteCount)
-  def currentWriteBackDelay = 7
+  def currentWriteBackDelay = 6
   def weightWriteBackDelay = 6
 
   val io = new Bundle {
@@ -96,7 +96,7 @@ class Synapse extends Component {
     val PRE_SPIKE = Stageable(Bits(16 bits))
     val DONE = Stageable(Bool())
     val NID = Stageable(cloneOf(io.synapseEvent.nid))
-    val DELTA_WEIGHT, WEIGHT, CURRENT = Stageable(Bits(64 bits))
+    val LTD_QUERY_Y, WEIGHT, CURRENT = Stageable(Bits(64 bits))
 
     val s0 = new Stage {
       valid := io.synapseEvent.valid && eventDone.isFree
@@ -135,18 +135,19 @@ class Synapse extends Component {
       io.ltdQuery.x.zip(spikeTimeDiff.io.ltdDeltaT).foreach(z => z._1.payload := z._2)
       io.ltpQuery.x.zip(spikeTimeDiff.io.ltpValid).foreach(z => z._1.valid := z._2)
       io.ltdQuery.x.zip(spikeTimeDiff.io.ltdValid).foreach(z => z._1.valid := z._2)
-    }
-
-    val s4 = new Stage(connection = M2S()) {
-      DELTA_WEIGHT := vAdd(io.ltpQuery.y, io.ltdQuery.y)
-      WEIGHT := io.synapseData.read.rsp
 
       io.current.read.cmd.valid := valid
       io.current.read.cmd.payload := ADDR_INCR.resized
     }
 
+    val s4 = new Stage(connection = M2S()) {
+      WEIGHT := vAdd(io.ltpQuery.y, io.synapseData.read.rsp)
+      LTD_QUERY_Y := io.ltdQuery.y.asBits
+    }
+
     val s5 = new Stage(connection = M2S()) {
-      overloaded(WEIGHT) := vAdd(WEIGHT.asBits, DELTA_WEIGHT.asBits)
+      CURRENT := vAdd(io.current.read.rsp, WEIGHT.asBits)
+      overloaded(WEIGHT) := vAdd(WEIGHT.asBits, LTD_QUERY_Y.asBits)
     }
 
     val s6 = new Stage(connection = M2S()) {
@@ -154,16 +155,13 @@ class Synapse extends Component {
       io.synapseData.write.data := WEIGHT
       io.synapseData.write.address := CACHE_ADDR
 
-      CURRENT := vAdd(io.current.read.rsp, WEIGHT.asBits)
-    }
-
-    val s7 = new Stage(connection = M2S()) {
       io.current.write.valid := valid
       io.current.write.address := ADDR_INCR.resized
       io.current.write.data := CURRENT
+
       eventDone.valid := DONE && valid
       eventDone.nid := NID
-      eventDone.cacheLineAddr := CACHE_ADDR>>io.csr.len.getWidth
+      eventDone.cacheLineAddr := CACHE_ADDR >> io.csr.len.getWidth
     }
   }
   pipeline.build()

@@ -183,9 +183,9 @@ class SynapseTest extends AnyFunSuite {
   /*
   test pipeline timing
   pre-spike and post-spike trigger ltpT = 14, ltdT = 1,
-  default ltpW = 14 + 1, weight = [1, 2, 3, 4], current = 1
+  default stdpW = 14 + 1, weight = [1, 2, 3, 4], current = 1
   write back weight = [0xF, 0x10, 0x11, 0x12]
-  write back current = [0x10, 0x11, 0x12, 0x13]
+  write back current = [0xE, 0xF, 0x10, 0x11]
    */
   test("pipeline simple test"){
     complied.doSim{ dut =>
@@ -195,7 +195,7 @@ class SynapseTest extends AnyFunSuite {
       val current = 0x0001000100010001L
       val weight = 0x0001000200030004L
       val writeBackWeight = 0x0010001100120013L
-      val writeBackCurrent = writeBackWeight + current
+      val writeBackCurrent = writeBackWeight + current - 0x0001000100010001L
       val cacheLineAddr = 100
       val cacheWordAddr = cacheLineAddr<<CacheConfig.wordOffsetWidth
       slaves.cache.mem.writeBigInt(cacheWordAddr<<3, weight, 8)
