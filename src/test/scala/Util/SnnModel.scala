@@ -1,12 +1,15 @@
 package Util
 
 import scala.util.Random
+import sim.NumberTool._
 
 class SnnModel(preLen:Int, postLen:Int) {
   val weight = Array.tabulate(preLen, postLen){
     (_, _) => 1
   }
   val current = Array.fill(postLen)(0)
+  val ltpLut = (1 to 16).toArray
+  val ltdLut = (1 to 16).map(-_).toArray
 
   def weightRandomize(): Unit ={
     for(i <- 0 until preLen){
@@ -32,9 +35,38 @@ class SnnModel(preLen:Int, postLen:Int) {
     }
   }
 
-  def spikeUpdate(preSpike:Array[Int], postSpike:Array[Int]): Unit ={
-    for (i <- 0 until preLen) {
-      for (j <- 0 until postLen) {
+  def spikeUpdate(preSpike:Array[Array[Int]], postSpike:Array[Array[Int]]): Unit = {
+    val preSpikeLastFireTime = Array.fill(preLen)(-16)
+    val postSpikeLastFireTime = Array.fill(postLen)(-16)
+    for(t <- preSpike.indices){
+      spikeForward(preSpike(t))
+      // update weight
+      for(i <- 0 until preLen){
+        for(j <- 0 until postLen){
+          if(preSpike(t)(i)==1){
+            val deltaT = t - postSpikeLastFireTime(j)
+            if(deltaT<16){
+              weight(i)(j) += ltdLut(deltaT)
+            }
+          }
+          if(postSpike(t)(j)==1){
+            val deltaT = t - preSpikeLastFireTime(i)
+            if(deltaT<16){
+              weight(i)(j) += ltpLut(deltaT)
+            }
+          }
+        }
+      }
+      // update spike fire time
+      for(i <- 0 until preLen){
+        if(preSpike(t)(i)==1){
+          preSpikeLastFireTime(i) = t
+        }
+      }
+      for(j <- 0 until postLen){
+        if(postSpike(t)(j)==1){
+          postSpikeLastFireTime(j) = t + 1
+        }
       }
     }
   }

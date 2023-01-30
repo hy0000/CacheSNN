@@ -63,6 +63,29 @@ object SynapseCore {
     addrWidth = log2Up(AddrMapping.cache.size) + 1,
     dataWidth = busDataWidth
   )
+
+  object RegAddr {
+    val fieldR = 0x0
+    val field0 = 0x4
+    val field1 = 0x8
+    val field2 = 0xC
+  }
+
+  object RegConfig {
+    object Field2 {
+      val refractory = 1L
+      val inferenceOnly = refractory << 2
+      val learning = inferenceOnly | 0x2
+      val inferenceFlush = inferenceOnly | 0x1
+      val learningFlush = learning | 0x1
+    }
+
+    def field0(preLen: Int, postLen: Int, postNidBase: Int): Long = {
+      ((postLen / 4 - 1) << 24) | ((preLen / 4 - 1) << 16) | postNidBase
+    }
+
+    val fieldRFree = 1L << 16
+  }
 }
 
 object CacheConfig {
