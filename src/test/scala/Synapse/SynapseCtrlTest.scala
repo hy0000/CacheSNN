@@ -173,8 +173,6 @@ class SynapseCtrlTest extends AnyFunSuite {
 
     // init bus slave
     for (i <- 0 until postLen) {
-      val currentAddr = AddrMapping.current.base.toLong + (i << 1)
-      bus.mem.writeBigInt(currentAddr, 0, 2)
       val postSpikeAddr = AddrMapping.postSpike.base.toLong + (i << 1)
       bus.mem.writeBigInt(postSpikeAddr, 0, 2)
     }

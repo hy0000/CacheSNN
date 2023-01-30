@@ -76,13 +76,29 @@ class SynapseCtrl extends Component {
   }
 
   val fsm = new StateMachine {
-    val idle = makeInstantEntry()
+    val currentClearInit = makeInstantEntry()
+    val idle = new State
     val flush0, flush1 = new State
     val bufferSpike = new State
     val compute = new State
     val current = new StateFsm(currentFsm)
     val currentClear = new State
     val spikeUpdate = new State
+
+    currentClearInit.whenIsActive {
+      io.bus.cmd.valid := True
+      io.bus.cmd.write := True
+      io.bus.cmd.data := 0
+      io.bus.cmd.len := io.csr.len.maxValue
+      io.bus.cmd.address := AddrMapping.current.base
+      when(io.bus.cmd.fire) {
+        clearCnt.increment()
+        when(clearCnt === io.csr.len) {
+          clearCnt.clear()
+          goto(idle)
+        }
+      }
+    }
 
     idle.whenIsActive {
       io.free := True
