@@ -93,7 +93,7 @@ class SynapseCtrl extends Component {
       io.bus.cmd.address := AddrMapping.current.base
       when(io.bus.cmd.fire) {
         clearCnt.increment()
-        when(clearCnt === io.csr.len) {
+        when(clearCnt === io.csr.len.maxValue) {
           clearCnt.clear()
           goto(idle)
         }
