@@ -58,8 +58,7 @@ class BasePacketAgent(noc:NocInterfaceLocal, clockDomain: ClockDomain) {
 
   def sendSpike(maskSpike: Array[Int], nidBase: Int, eventType: AER.TYPE.E): Unit = {
     val data = NumberTool.vToRawV(maskSpike, 1, 64)
-    val dataExtend = data ++ Seq.fill(16 - data.length)(BigInt(0))
-    val p = AerPacketSim(dest, src, 0, eventType, nid = nidBase, data = dataExtend)
+    val p = AerPacketSim(dest, src, 0, eventType, nid = nidBase, data = data)
     driver.sendPacket(p)
   }
 
