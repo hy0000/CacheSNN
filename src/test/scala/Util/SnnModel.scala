@@ -24,8 +24,10 @@ class SnnModel(preLen:Int, postLen:Int) {
 
   def spikeForward(preSpike:Array[Int]): Unit ={
     for(nid <- 0 until preLen){
-      for(j <- 0 until postLen){
-        current(j) += weight(nid)(j)
+      if(preSpike(nid)==1){
+        for (j <- 0 until postLen) {
+          current(j) += weight(nid)(j)
+        }
       }
     }
   }
