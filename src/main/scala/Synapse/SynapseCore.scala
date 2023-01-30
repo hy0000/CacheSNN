@@ -167,6 +167,7 @@ class SynapseCore extends NocCore {
     val preLen      = FIELD0.field(UInt(8 bits), WO, "preLen")
     val postLen     = FIELD0.field(UInt(7 bits), WO, "postLen")
     val neuronCoreId = FIELD1.field(UInt(4 bits), WO, "neuronCoreId")
+    val managerCoreId = FIELD1.field(UInt(4 bits), WO, "managerCoreId")
     val flush      = FIELD2.field(Bool(), WO, "flush")
     val learning   = FIELD2.field(Bool, WO, "learning")
     val refractory = FIELD2.field(UInt(CacheConfig.tagTimestampWidth bits), WO, "refractory")
@@ -184,7 +185,8 @@ class SynapseCore extends NocCore {
   preSpikeFetch.io.learning := regArea.csr.learning
 
   synapseCtrl.io.aerIn <> interface.aer
-  synapseCtrl.io.aerOut.toNocInterface(regArea.neuronCoreId) >> interface.localSend
+  val aerOutDest = (synapseCtrl.io.aerOut.head.eventType===AER.TYPE.CURRENT)? regArea.neuronCoreId | regArea.managerCoreId
+  synapseCtrl.io.aerOut.toNocInterface(aerOutDest) >> interface.localSend
   synapseCtrl.io.spikeEventDone << synapse.io.synapseEventDone
   synapseCtrl.io.spikeEvent >> preSpikeFetch.io.spikeEvent
   preSpikeFetch.io.synapseEvent >> synapse.io.synapseEvent
