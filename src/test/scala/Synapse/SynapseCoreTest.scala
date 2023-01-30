@@ -5,6 +5,7 @@ import CacheSNN.CacheSnnTest._
 import CacheSNN.sim._
 import RingNoC.NocInterfaceLocal
 import Synapse.SynapseCore.AddrMapping
+import Util.SnnModel
 import Util.sim.NumberTool
 import org.scalatest.funsuite.AnyFunSuite
 import spinal.core._
@@ -41,7 +42,7 @@ class SynapseCoreAgent(noc:NocInterfaceLocal, clockDomain: ClockDomain)
       case AER.TYPE.CURRENT =>
         val currentData = NumberTool.rawToV(ap.data, width = 16, 4)
         for(i <- 0 until postLen){
-          current(i) = currentData(i)
+          current(i) += currentData(i)
         }
         currentReceived = true
     }
@@ -51,6 +52,11 @@ class SynapseCoreAgent(noc:NocInterfaceLocal, clockDomain: ClockDomain)
     clockDomain.waitSamplingWhere(currentReceived)
     currentReceived = false
   }
+
+  val initialWeight = weight.transpose.transpose
+  val ltdLut = Array.fill(16)(Random.nextInt(256))
+  val ltpLut = Array.fill(16)(Random.nextInt(256))
+
 }
 
 class SynapseCoreTest extends AnyFunSuite {
@@ -85,7 +91,7 @@ class SynapseCoreTest extends AnyFunSuite {
 
   def initDut(dut:SynapseCore): SynapseCoreAgent ={
     dut.clockDomain.forkStimulus(2)
-    SimTimeout(1000000)
+    SimTimeout(10000000)
     val agent = new SynapseCoreAgent(dut.noc, dut.clockDomain)
     // initial flush
     agent.regWrite(RegAddr.field2, RegConfig.Field2.inferenceFlush)
@@ -105,17 +111,22 @@ class SynapseCoreTest extends AnyFunSuite {
     }
   }
 
-  //test("inference only test") {
-  //  complied.doSim{ dut =>
-  //    val agent = initDut(dut)
-  //    val epoch = 2
-  //    val preSpike = Array.tabulate(epoch, preLen) {
-  //      (_, _) => if (Random.nextBoolean()) 1 else 0
-  //    }
-  //    for (t <- 0 until epoch) {
-  //      agent.sendSpike(preSpike(t), 0, AER.TYPE.PRE_SPIKE)
-  //      agent.waitCurrentReceived()
-  //    }
-  //  }
-  //}
+  test("inference only test") {
+    complied.doSim{ dut =>
+      val agent = initDut(dut)
+      agent.regWrite(RegAddr.field2, RegConfig.Field2.inferenceOnly)
+
+      val epoch = 20
+      val preSpike = Array.tabulate(epoch, preLen) {
+        (_, _) => if (Random.nextBoolean()) 1 else 0
+      }
+      val snnModel = new SnnModel(preLen, postLen)
+      for (t <- 0 until epoch) {
+        snnModel.spikeForward(preSpike(t))
+        agent.sendSpike(preSpike(t), 0, AER.TYPE.PRE_SPIKE)
+        agent.waitCurrentReceived()
+      }
+      assert(agent.current sameElements snnModel.current)
+    }
+  }
 }
