@@ -77,7 +77,7 @@ class SynapseCoreAgent(noc:NocInterfaceLocal, clockDomain: ClockDomain)
   }
 
   def assertSpikeHisRaw(spike:Array[Array[Int]], spikeHisRaw:Seq[BigInt]): Unit ={
-    val spikeHis = NumberTool.rawToV(spikeHisRaw, width = 16, 4)
+    val spikeHis = NumberTool.rawToV(spikeHisRaw, width = 16, 4).map(_ & 0xFFFF)
     val spikeHisTruth = spike.transpose.map{timeLine =>
       NumberTool.vToRaw(timeLine.reverse.take(16), width = 1).toInt
     }
@@ -152,6 +152,31 @@ class SynapseCoreTest extends AnyFunSuite {
       val zeroSpikePre = Array.tabulate(epoch, preLen)((_, _) => 0)
       val zeroSpikePost = Array.tabulate(epoch, postLen)((_, _) => 0)
       agent.assertSpikeHis(zeroSpikePre, zeroSpikePost)
+    }
+  }
+
+  test("spike update test"){
+    complied.doSim { dut =>
+      val agent = initDut(dut)
+      agent.regWrite(RegAddr.field2, RegConfig.Field2.learning)
+
+      val epoch = 20
+      val preSpike = Array.tabulate(epoch, preLen) {
+        (t, nid) => if (t==nid) 1 else 0
+      }
+      val postSpike = Array.tabulate(epoch, postLen) {
+        (t, nid) => if (t==nid) 1 else 0
+      }
+
+      for (t <- 0 until epoch) {
+        agent.sendPreSpike(preSpike(t))
+        agent.waitCurrentReceived()
+        agent.sendSpike(postSpike(t), 0, AER.TYPE.POST_SPIKE)
+        if (t == epoch - 1) {
+          agent.learningFlush()
+        }
+      }
+      agent.assertSpikeHis(preSpike, postSpike)
     }
   }
 
