@@ -43,7 +43,7 @@ class BasePacketAgent(noc:NocInterfaceLocal, clockDomain: ClockDomain) {
   }
 
   def dataRead(addr: Long, len: Int): Seq[BigInt] = {
-    val bp = BasePacketSim.dataRead(dest = dest, src = src, id = 0, addr = addr, len = len)
+    val bp = BasePacketSim.dataRead(dest = dest, src = src, id = 0, addr = addr, len = len - 1)
     driver.sendPacket(bp)
     clockDomain.waitSamplingWhere(dataReadRsp.nonEmpty)
     dataReadRsp.dequeue()
@@ -109,7 +109,7 @@ class BasePacketAgent(noc:NocInterfaceLocal, clockDomain: ClockDomain) {
       }
       val dataSlice = data.slice(i, iNext)
       val address = sizeMapping.base.toLong + i * 8
-      val rspData = dataRead(address, len = iNext - i - 1)
+      val rspData = dataRead(address, len = iNext - i)
       assert(dataSlice.toSeq == rspData)
       i = iNext
     }

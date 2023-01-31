@@ -8,8 +8,10 @@ class SnnModel(preLen:Int, postLen:Int) {
     (_, _) => 1
   }
   val current = Array.fill(postLen)(0)
-  val ltpLut = (1 to 16).toArray
-  val ltdLut = (1 to 16).map(-_).toArray
+  //val ltpLut = (1 to 16).toArray
+  //val ltdLut = (1 to 16).map(-_).toArray
+  val ltpLut = Array.fill(16)(1)//(1 to 16).toArray
+  val ltdLut = Array.fill(16)(0)//(1 to 16).map(-_).toArray
 
   def weightRandomize(): Unit ={
     for(i <- 0 until preLen){
@@ -40,32 +42,28 @@ class SnnModel(preLen:Int, postLen:Int) {
     val postSpikeLastFireTime = Array.fill(postLen)(-16)
     for(t <- preSpike.indices){
       spikeForward(preSpike(t))
-      // update weight
-      for(i <- 0 until preLen){
-        for(j <- 0 until postLen){
-          if(preSpike(t)(i)==1){
+      // update ltd weight
+      for(i <- 0 until preLen) {
+        if (preSpike(t)(i) == 1) {
+          preSpikeLastFireTime(i) = t
+          for (j <- 0 until postLen) {
             val deltaT = t - postSpikeLastFireTime(j)
-            if(deltaT<16){
+            if (deltaT < 16) {
               weight(i)(j) += ltdLut(deltaT)
             }
           }
-          if(postSpike(t)(j)==1){
+        }
+      }
+      // update ltp weight
+      for(j <- 0 until postLen) {
+        if(postSpike(t)(j)==1) {
+          postSpikeLastFireTime(j) = t + 1
+          for(i <- 0 until preLen) {
             val deltaT = t - preSpikeLastFireTime(i)
-            if(deltaT<16){
+            if (deltaT < 16) {
               weight(i)(j) += ltpLut(deltaT)
             }
           }
-        }
-      }
-      // update spike fire time
-      for(i <- 0 until preLen){
-        if(preSpike(t)(i)==1){
-          preSpikeLastFireTime(i) = t
-        }
-      }
-      for(j <- 0 until postLen){
-        if(postSpike(t)(j)==1){
-          postSpikeLastFireTime(j) = t + 1
         }
       }
     }
