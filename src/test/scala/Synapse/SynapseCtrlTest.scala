@@ -96,7 +96,7 @@ class SpikeUpdaterTest extends AnyFunSuite {
       }
       // update post spike
       for (i <- 0 until postLen) {
-        postSpikeHisTruth(i) = ((postSpikeHisTruth(i) << 1) & mask16) | postSpike(t)(i)
+        postSpikeHisTruth(i) = ((postSpikeHisTruth(i) << 1) & mask16) | (postSpike(t)(i)<<1)
       }
 
       // drive dut
@@ -197,7 +197,7 @@ class SynapseCtrlTest extends AnyFunSuite {
           val addr = (s.cacheLineAddr.toLong<<addrShift) | (i << 1)
           val weight = bus.mem.readBigInt(addr, 2).toInt
           val postSpikeAddr = AddrMapping.postSpike.base.toLong + (i << 1)
-          val postSpike = bus.mem.readBigInt(postSpikeAddr, 2).toInt & 0x1
+          val postSpike = (bus.mem.readBigInt(postSpikeAddr, 2).toInt>>1) & 0x1
           val weightNew = rawToInt(weight, 16) + 1 - postSpike
           bus.mem.writeBigInt(addr, weightNew, 2)
         }

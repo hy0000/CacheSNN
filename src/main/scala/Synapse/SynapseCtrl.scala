@@ -368,7 +368,12 @@ class SpikeUpdater extends Component {
 
     postSpikeUpdate
       .whenIsActive{
-        spikeUpdate(postWb)((s, i) => s.dropHigh(1) ## spikeMask(i))
+        //spikeUpdate(postWb)((s, i) => s.dropHigh(1) ## spikeMask(i))
+        spikeUpdate(postWb){(s, i) =>
+          val ret = s|<<1
+          ret(1) := spikeMask(i)
+          ret
+        }
         when(io.bus.rsp.fire) {
           maskSpikeCnt.increment()
         }
