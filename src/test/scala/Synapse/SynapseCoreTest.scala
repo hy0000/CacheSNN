@@ -79,15 +79,14 @@ class SynapseCoreAgent(noc:NocInterfaceLocal, clockDomain: ClockDomain)
   def assertSpikeHisRaw(spike:Array[Array[Int]], spikeHisRaw:Seq[BigInt]): Unit ={
     val spikeHis = NumberTool.rawToV(spikeHisRaw, width = 16, 4).map(_ & 0xFFFF)
     val spikeHisTruth = spike.transpose.map{timeLine =>
-      NumberTool.vToRaw(timeLine.reverse.take(16), width = 1).toInt
+      NumberTool.vToRaw(timeLine.reverse.take(15), width = 1).toInt << 1
     }
     assert(spikeHis sameElements spikeHisTruth)
   }
 
   def assertSpikeHis(preSpike: Array[Array[Int]], postSpike: Array[Array[Int]]): Unit ={
     val preSpikeRaw = dataRead(AddrMapping.preSpike.base.toInt, preLen / 4)
-    val preSpikeShift = preSpike ++ Array(Array.fill(preLen)(0))
-    assertSpikeHisRaw(preSpikeShift, preSpikeRaw)
+    assertSpikeHisRaw(preSpike, preSpikeRaw)
     val posSpikeRaw = dataRead(AddrMapping.postSpike.base.toInt, postLen / 4)
     assertSpikeHisRaw(postSpike, posSpikeRaw)
   }
@@ -185,7 +184,7 @@ class SynapseCoreTest extends AnyFunSuite {
       val agent = initDut(dut)
       agent.regWrite(RegAddr.field2, RegConfig.Field2.learning)
 
-      val epoch = 1
+      val epoch = 20
       val preSpike = Array.tabulate(epoch, preLen) {
         (_, _) => if (Random.nextBoolean()) 1 else 0
       }
@@ -209,7 +208,12 @@ class SynapseCoreTest extends AnyFunSuite {
 
       snnModel.spikeUpdate(preSpike, postSpike)
       agent.assertSpikeHis(preSpike, postSpike)
-      //assert(agent.weight sameElements snnModel.weight)
+      for(i <- 0 until preLen) {
+        for(j <- 0 until postLen){
+          assert(agent.weight(i)(j)==snnModel.weight(i)(j), s"at $i $j")
+        }
+      }
+      assert(agent.current sameElements snnModel.current)
     }
   }
 }
