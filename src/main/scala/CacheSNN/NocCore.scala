@@ -70,6 +70,14 @@ abstract class NocCore extends Component {
   noc.send << StreamArbiterFactory.fragmentLock.lowerFirst.on(
     Seq(nocUnPacker.io.rspSend.stage(), interface.localSend)
   )
+
+  def idleInterface(): Unit = {
+    interface.flattenForeach{bt =>
+      if(!bt.hasDataAssignment){
+        bt := bt.getZero
+      }
+    }
+  }
 }
 
 class NocUnPacker(supportMemMaster:Boolean, supportMemSlave:Boolean) extends Component {
