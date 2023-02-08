@@ -4,6 +4,7 @@ import CacheSNN.CacheSnnTest._
 import Util.sim.NumberTool._
 import org.scalatest.funsuite.AnyFunSuite
 import spinal.core.sim._
+import spinal.lib.sim.StreamReadyRandomizer
 
 import scala.util.Random
 
@@ -64,6 +65,50 @@ class NeuronComputeTest extends AnyFunSuite {
         }
       }
       spikeMonitor.join()
+    }
+  }
+}
+
+class SpikeRamTest extends AnyFunSuite {
+  val complied = simConfig.compile(new SpikeRam)
+
+  test("read test"){
+    complied.doSim{ dut =>
+      dut.clockDomain.forkStimulus(2)
+      SimTimeout(1000)
+      StreamReadyRandomizer(dut.io.readRsp, dut.clockDomain)
+      dut.io.readStart #= false
+
+      val spikes = Array.fill(8)(BigInt(64, Random))
+      // write data
+      for(i <- 0 until 8){
+        dut.io.write.valid #= true
+        dut.io.write.data #= spikes(i)
+        dut.io.write.address #= i
+        dut.clockDomain.waitSampling()
+      }
+      dut.io.write.valid #= false
+
+      // read cmd
+      fork{
+        for (_ <- 0 until 4) {
+          dut.io.readStart #= true
+          dut.clockDomain.waitSampling()
+          dut.io.readStart #= false
+          dut.clockDomain.waitSamplingWhere(
+            dut.io.readRsp.last.toBoolean &&
+              dut.io.readRsp.valid.toBoolean &&
+              dut.io.readRsp.ready.toBoolean
+          )
+        }
+      }
+
+      for (_ <- 0 until 4) {
+        for(i <- 0 until 8){
+          dut.clockDomain.waitSamplingWhere(dut.io.readRsp.valid.toBoolean && dut.io.readRsp.ready.toBoolean)
+          assert(dut.io.readRsp.fragment.toBigInt==spikes(i))
+        }
+      }
     }
   }
 }

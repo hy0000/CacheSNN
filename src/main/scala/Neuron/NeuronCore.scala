@@ -2,7 +2,7 @@ package Neuron
 
 import CacheSNN.{AER, NocCore}
 import RingNoC.NocInterfaceLocal
-import Util.{Misc, MemWriteCmd}
+import Util.{Misc, MemWriteCmd, MemReadWrite}
 import spinal.core._
 import spinal.core.sim._
 import spinal.lib._
@@ -180,4 +180,28 @@ class NeuronCompute extends Component {
   io.maskSpike.address := s3(ADDR)(6 downto 4)
   io.maskSpike.data := spikesReg
   pip.build()
+}
+
+class SpikeRam extends Component {
+  val io = new Bundle {
+    val write = slave(Flow(MemWriteCmd(64, log2Up(512 / 64))))
+    val readStart = in Bool()
+    val readRsp = master(Stream(Fragment(Bits(64 bits))))
+  }
+
+  val ram = Mem(Bits(64 bits), 512 / 64)
+  ram.write(io.write.address, io.write.data, io.write.valid)
+
+  val cnt = Counter(8)
+  val reading = RegInit(False)
+  val readValid = reading | io.readStart
+  io.readRsp.valid := RegNextWhen(readValid, io.readRsp.ready, False)
+  io.readRsp.fragment := ram.readSync(cnt.value, readValid && io.readRsp.ready)
+  io.readRsp.last := RegNextWhen(cnt.willOverflowIfInc, io.readRsp.ready)
+
+  reading.riseWhen(io.readStart)
+  reading.fallWhen(cnt.willOverflow)
+  when(io.readRsp.ready && readValid){
+    cnt.increment()
+  }
 }
