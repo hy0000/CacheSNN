@@ -45,7 +45,7 @@ class NeuronCoreAgent(noc:NocInterfaceLocal, clockDomain: ClockDomain)
   override def onAER(p: BasePacketSim): Unit = {
     val aerP = AerPacketSim(p)
     val targetJob = jobQueue.find(job => job.nidBase==aerP.nid).get
-    for(i <- aerP.data.indices){
+    for(i <- targetJob.spikeRaw.indices){
       assert(aerP.data(i) == targetJob.spikeRaw(i), s"${aerP.data(i).toString(2)} ${ targetJob.spikeRaw(i).toString(2)} at $i")
     }
     coreRecSpike(aerP.dest) += 1
@@ -54,7 +54,7 @@ class NeuronCoreAgent(noc:NocInterfaceLocal, clockDomain: ClockDomain)
   def runTest(): Unit = {
     var i = 0
     // reg config
-    var nidField, mapField = 0L
+    var nidField, mapField, lenField = 0L
     var thresholdField = BigInt(0)
     for(job <- jobQueue){
       val srcList = job.mapInfo.map(_.src)
@@ -62,6 +62,7 @@ class NeuronCoreAgent(noc:NocInterfaceLocal, clockDomain: ClockDomain)
       val srcOhRaw = vToRaw(srcOh, 1).toLong
       nidField |= ((job.nidBase >> 8) | 1) << (i*8)
       mapField |= (((job.mapInfo.length-1)<<6) | (i<<4) | srcOhRaw) << (i*8)
+      lenField |= (job.mapInfo.head.current.length - 1)<<(i*4)
       thresholdField |= job.threshold<<(i*16)
       i += 1
     }
@@ -71,6 +72,7 @@ class NeuronCoreAgent(noc:NocInterfaceLocal, clockDomain: ClockDomain)
     regWrite(0x04, mapField)
     regWrite(0x08, threshold0)
     regWrite(0x0C, threshold1)
+    regWrite(0x10, lenField)
     // send current packet
     for(job <- jobQueue){
       for(mapInfo <- job.mapInfo){
@@ -113,7 +115,7 @@ class NeuronCoreTest extends AnyFunSuite {
     complied.doSim{ dut =>
       val agent = initDut(dut)
       val mapInfo = Seq(0, 1, 4, 5).map{src =>
-        val current = Array.fill(512)(Random.nextInt(2))
+        val current = Array.fill(256 + 64)(Random.nextInt(2))
         MapInfo(current, src)
       }
       val job = NeuronJob(0x0, mapInfo.toArray, threshold = 2)
@@ -197,10 +199,12 @@ class SpikeRamTest extends AnyFunSuite {
       SimTimeout(1000)
       StreamReadyRandomizer(dut.io.readRsp, dut.clockDomain)
       dut.io.readStart #= false
+      val len = Random.nextInt(8)
+      dut.io.len #= len
 
-      val spikes = Array.fill(8)(BigInt(64, Random))
+      val spikes = Array.fill(len + 1)(BigInt(64, Random))
       // write data
-      for(i <- 0 until 8){
+      for(i <- 0 to len){
         dut.io.write.valid #= true
         dut.io.write.data #= spikes(i)
         dut.io.write.address #= i
@@ -223,7 +227,7 @@ class SpikeRamTest extends AnyFunSuite {
       }
 
       for (_ <- 0 until 4) {
-        for(i <- 0 until 8){
+        for(i <- 0 to len){
           dut.clockDomain.waitSamplingWhere(dut.io.readRsp.valid.toBoolean && dut.io.readRsp.ready.toBoolean)
           assert(dut.io.readRsp.fragment.toBigInt==spikes(i))
         }

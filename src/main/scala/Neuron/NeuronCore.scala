@@ -25,6 +25,7 @@ class NeuronCore extends NocCore {
     val addr = UInt(2 bits)
     val src = Bits(4 bits)
     val threshold = SInt(16 bits)
+    val spikeLen = UInt(4 bits)
   }
 
   val regArea = new Area {
@@ -33,6 +34,7 @@ class NeuronCore extends NocCore {
     val MapField  = busIf.newReg("map field")
     val ThresholdField0 = busIf.newReg("threshold field0")
     val ThresholdField1 = busIf.newReg("threshold field0")
+    val LenField = busIf.newReg("len field")
 
     val nidMap = Vec(NidMap(), 4)
     for(i <- 0 until 4){
@@ -41,6 +43,7 @@ class NeuronCore extends NocCore {
       nidMap(i).src := MapField.field(Bits(4 bits), WO, s"src $i").setName(s"src_$i")
       nidMap(i).addr := MapField.field(UInt(2 bits), WO, s"addr $i").setName(s"addr_$i")
       nidMap(i).acc := MapField.field(UInt(2 bits), WO, s"acc $i").setName(s"acc_$i")
+      nidMap(i).spikeLen := LenField.field(UInt(4 bits), WO, s"spike len $i").setName(s"spike_len_$i")
     }
 
     val threshold0 = ThresholdField0.field(SInt(16 bits), WO, s"threshold 0")
@@ -128,6 +131,7 @@ class NeuronCore extends NocCore {
       }
 
     sendSpikeHead.whenIsActive {
+      spikeRam.io.len := mapInfo.spikeLen.resized
       interface.localSend.valid := destMapOh(sendCnt)
       interface.localSend.setHead(
         dest = destMap(sendCnt),
@@ -146,6 +150,7 @@ class NeuronCore extends NocCore {
     }
 
     sendSpikeBody.whenIsActive {
+      spikeRam.io.len := mapInfo.spikeLen.resized
       interface.localSend.arbitrationFrom(spikeRam.io.readRsp)
       interface.localSend.last := spikeRam.io.readRsp.last
       interface.localSend.flit := spikeRam.io.readRsp.fragment
@@ -220,6 +225,7 @@ class NeuronCompute extends Component {
 
 class SpikeRam extends Component {
   val io = new Bundle {
+    val len = in UInt(3 bits)
     val write = slave(Flow(MemWriteCmd(64, log2Up(512 / 64))))
     val readStart = in Bool()
     val readRsp = master(Stream(Fragment(Bits(64 bits))))
@@ -231,13 +237,16 @@ class SpikeRam extends Component {
   val cnt = Counter(8)
   val reading = RegInit(False)
   val readValid = reading | io.readStart
+  val last = cnt.value===io.len
   io.readRsp.valid := RegNextWhen(readValid, io.readRsp.ready, False)
   io.readRsp.fragment := ram.readSync(cnt.value, readValid && io.readRsp.ready)
-  io.readRsp.last := RegNextWhen(cnt.willOverflowIfInc, io.readRsp.ready)
+  io.readRsp.last := RegNextWhen(last, io.readRsp.ready)
 
   reading.riseWhen(io.readStart)
-  reading.fallWhen(cnt.willOverflow)
+  reading.fallWhen(cnt.willIncrement && last)
   when(io.readRsp.ready && readValid){
     cnt.increment()
+  }elsewhen !reading {
+    cnt.clear()
   }
 }
