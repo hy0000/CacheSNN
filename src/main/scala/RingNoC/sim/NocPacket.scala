@@ -12,6 +12,12 @@ class NocPacket(val dest: Int,
   def head: BigInt = (dest.toBigInt << 60) | (src.toBigInt << 52) | custom
 
   def headOnly: Boolean = data.isEmpty
+
+  def equals(that: NocPacket): Boolean =
+    dest==that.dest &&
+      src==that.src &&
+      custom==that.custom &&
+      data == that.data
 }
 
 object NocPacket {

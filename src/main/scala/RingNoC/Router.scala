@@ -1,6 +1,7 @@
 package RingNoC
 
-import Util.Misc
+import Util.{Misc, StreamFifoDelay2}
+import spinal.core.Component.push
 import spinal.core._
 import spinal.lib._
 
@@ -65,5 +66,26 @@ class Router(routerConfig: RouterConfig) extends Component {
     val leftIn, rightIn = slave(NocInterface())
     val leftOut, rightOut = master(NocInterface())
   }
-  stub()
+
+  val leftDeMux, rightDeMux = new RouterDeMux(routerConfig)
+  val localDeMux = new RouterDeMuxLocal(routerConfig)
+
+  leftDeMux.io.nocIn << io.leftIn
+  rightDeMux.io.nocIn << io.rightIn
+  localDeMux.io.localIn << io.local.send
+
+  val leftOuts = Seq(localDeMux.io.nocLeftOut, rightDeMux.io.nocOut)
+  val rightOuts = Seq(localDeMux.io.nocRightOut, leftDeMux.io.nocOut)
+  val localOuts = Seq(leftDeMux.io.localOut, rightDeMux.io.localOut)
+
+  Seq(leftOuts, rightOuts, localOuts)
+    .zip(Seq(io.leftOut, io.rightOut, io.local.rec))
+    .foreach{case (pIns, pOut) =>
+      val outPorts = pIns.map { p =>
+        val fifo = StreamFifoDelay2(p.payload, 512)
+        p >> fifo.io.push
+        fifo.io.pop
+      }
+      pOut << StreamArbiterFactory.fragmentLock.roundRobin.on(outPorts)
+    }
 }

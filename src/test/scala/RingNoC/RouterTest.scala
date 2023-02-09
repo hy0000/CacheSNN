@@ -3,9 +3,12 @@ package RingNoC
 import CacheSNN.CacheSnnTest._
 import RingNoC.sim._
 import org.scalatest.funsuite.AnyFunSuite
+import spinal.core._
 import spinal.core.sim._
+import spinal.lib._
 import spinal.lib.sim.StreamReadyRandomizer
 
+import scala.collection.mutable
 import scala.util.Random
 
 class RouterDeMuxTest extends AnyFunSuite {
@@ -93,5 +96,82 @@ class RouterDeMuxLocalTest extends AnyFunSuite {
 }
 
 class RouterTest extends AnyFunSuite {
+  val routerConfig = RouterConfig(Random.nextInt(16))
+  val complied = simConfig.compile(new Router(routerConfig))
 
+  class RouterOutMonitor(port:Stream[Fragment[NocInterface]], clockDomain: ClockDomain)
+    extends NocInterfaceMonitor(port, clockDomain){
+
+    val targetPacket = Array.fill(16)(mutable.Queue[NocPacket]())
+    usingReadyRandomizer()
+
+    override def onPacket(p: NocPacket) = {
+      val tp = targetPacket(p.src).dequeue()
+      assert(p.equals(tp))
+    }
+
+    def addPacket(p:NocPacket): Unit ={
+      targetPacket(p.src).enqueue(p)
+    }
+
+    def addPackets(ps:Seq[NocPacket]): Unit ={
+      for(p <- ps){
+        addPacket(p)
+      }
+    }
+
+    def waitComplete(): Unit ={
+      for(tpQueue <- targetPacket){
+        clockDomain.waitSamplingWhere(tpQueue.isEmpty)
+      }
+    }
+  }
+
+  case class RouterAgent(dut:Router){
+    val leftInDriver = new NocInterfaceDriver(dut.io.leftIn, dut.clockDomain)
+    val rightInDriver = new NocInterfaceDriver(dut.io.rightIn, dut.clockDomain)
+    val localInDriver = new NocInterfaceDriver(dut.io.local.send, dut.clockDomain)
+
+    val leftOutMonitor = new RouterOutMonitor(dut.io.leftOut, dut.clockDomain)
+    val rightOutMonitor = new RouterOutMonitor(dut.io.rightOut, dut.clockDomain)
+    val localOutMonitor = new RouterOutMonitor(dut.io.local.rec, dut.clockDomain)
+  }
+
+  def initDut(dut:Router):RouterAgent = {
+    dut.clockDomain.forkStimulus(2)
+    SimTimeout(1000000)
+    RouterAgent(dut)
+  }
+
+  test("single direction test"){
+    complied.doSim { dut =>
+      val agent = initDut(dut)
+      val id = routerConfig.coordinate
+      val leftId = (id+16-1) % 16
+      val rightId = (id + 1) % 16
+      def randomData = Seq.fill(Random.nextInt(256))(BigInt(64, Random))
+
+      val localToLeftP = NocPacket(leftId, id, 0, randomData)
+      val localToRightP = NocPacket(rightId, id, 0, randomData)
+      agent.localInDriver.sendPacket(localToLeftP, localToRightP)
+      agent.leftOutMonitor.addPacket(localToLeftP)
+      agent.rightOutMonitor.addPacket(localToRightP)
+
+      val leftToLocalP = NocPacket(id, leftId, 0, randomData)
+      val leftToRightP = NocPacket(rightId, leftId, 0, randomData)
+      agent.leftInDriver.sendPacket(leftToLocalP, leftToRightP)
+      agent.localOutMonitor.addPacket(leftToLocalP)
+      agent.rightOutMonitor.addPacket(leftToRightP)
+
+      val rightToLocalP = NocPacket(id, rightId, 0, randomData)
+      val rightToLeftP = NocPacket(leftId, rightId, 0, randomData)
+      agent.rightInDriver.sendPacket(rightToLocalP, rightToLeftP)
+      agent.localOutMonitor.addPacket(rightToLocalP)
+      agent.leftOutMonitor.addPacket(rightToLeftP)
+
+      agent.leftOutMonitor.waitComplete()
+      agent.rightOutMonitor.waitComplete()
+      agent.localOutMonitor.waitComplete()
+    }
+  }
 }
