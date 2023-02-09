@@ -59,6 +59,11 @@ class RouterDeMuxLocal(routerConfig: RouterConfig) extends Component {
   }
 }
 
-class Router extends Component {
-
+class Router(routerConfig: RouterConfig) extends Component {
+  val io = new Bundle {
+    val local = slave(NocInterfaceLocal())
+    val leftIn, rightIn = slave(NocInterface())
+    val leftOut, rightOut = master(NocInterface())
+  }
+  stub()
 }
