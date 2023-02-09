@@ -1,127 +1,163 @@
 package Neuron
 
-import CacheSNN.{AER, NocCore}
-import RingNoC.NocInterfaceLocal
-import Util.{Misc, MemWriteCmd, MemReadWrite}
+import CacheSNN.{AER, NocCore, PacketType}
+import Util.{MemWriteCmd, Misc}
 import spinal.core._
 import spinal.core.sim._
 import spinal.lib._
 import spinal.lib.bus.misc.SizeMapping
 import spinal.lib.bus.regif.AccessType.WO
-import spinal.lib.bus.regif.Apb3BusInterface
+import spinal.lib.bus.regif.{Apb3BusInterface, HtmlGenerator}
 import spinal.lib.fsm._
-import spinal.lib.pipeline._
 import spinal.lib.pipeline.Connection.M2S
+import spinal.lib.pipeline._
 
 /**
  * receive and acc current packet
  * send spikes to synapse core and manager core
  */
 class NeuronCore extends NocCore {
+
+  case class NidMap() extends Bundle {
+    val valid = Bool()
+    val nid = UInt(7 bits)
+    val acc = UInt(2 bits)
+    val addr = UInt(2 bits)
+    val src = Bits(4 bits)
+    val threshold = SInt(16 bits)
+  }
+
   val regArea = new Area {
     val busIf = Apb3BusInterface(interface.regBus, SizeMapping(0, 256 Byte), 0, "")
     val NidField  = busIf.newReg("nid field")
     val MapField  = busIf.newReg("map field")
-    val ParamField = busIf.newReg("param field")
-
-    case class NidMap() extends Bundle {
-      val valid = Bool()
-      val nid = UInt(8 bits)
-      val src = UInt(4 bits)
-      val addr = UInt(4 bits)
-    }
+    val ThresholdField0 = busIf.newReg("threshold field0")
+    val ThresholdField1 = busIf.newReg("threshold field0")
 
     val nidMap = Vec(NidMap(), 4)
     for(i <- 0 until 4){
-      nidMap(i).nid := NidField.field(UInt(7 bits), WO, s"nid $i")
-      nidMap(i).valid := NidField.field(Bool(), WO, s"valid $i")
-      nidMap(i).src := MapField.field(UInt(4 bits), WO, s"src $i")
-      nidMap(i).addr := MapField.field(UInt(4 bits), WO, s"addr $i")
+      nidMap(i).valid := NidField.field(Bool(), WO, s"valid $i").setName(s"valid_$i")
+      nidMap(i).nid := NidField.field(UInt(7 bits), WO, s"nid $i").setName(s"nid_$i")
+      nidMap(i).src := MapField.field(Bits(4 bits), WO, s"src $i").setName(s"src_$i")
+      nidMap(i).addr := MapField.field(UInt(2 bits), WO, s"addr $i").setName(s"addr_$i")
+      nidMap(i).acc := MapField.field(UInt(2 bits), WO, s"acc $i").setName(s"acc_$i")
     }
 
-    val threshold = ParamField.field(SInt(16 bits), WO, s"threshold")
+    val threshold0 = ThresholdField0.field(SInt(16 bits), WO, s"threshold 0")
+    val threshold1 = ThresholdField0.field(SInt(16 bits), WO, s"threshold 1")
+    val threshold2 = ThresholdField1.field(SInt(16 bits), WO, s"threshold 2")
+    val threshold3 = ThresholdField1.field(SInt(16 bits), WO, s"threshold 3")
+    Seq(threshold0, threshold1, threshold2, threshold3).zip(nidMap).foreach(z => z._2.threshold := z._1)
+    busIf.accept(HtmlGenerator("NeuronCoreReg", "NeuronCore"))
   }
 
-  val neuron = new NeuronCompute
-  neuron.io.acc := True
-  Misc.clearIO(neuron.io)
+  val destMap = Vec(UInt(4 bits), 5)
+  destMap(0) := 0
+  destMap(1) := 1
+  destMap(2) := 4
+  destMap(3) := 5
+  destMap(4) := 3 // manager core
 
-  val addr = UInt(4 bits) setAsReg()
-  val accTimesCnt = Vec(Reg(UInt(2 bits)) init 0, 4)
-  val nidBase = Reg(UInt(16 bits))
+  val accTimes = Vec(Reg(UInt(2 bits)) init 0, 4)
   val sendCnt = Counter(5)
 
-  /*
-  val spikeRamArea = new Area {
-    val ram = Mem(Bits(64 bits), 16)
-    val addr = Counter(16)
-    val write = False
-    val read = False
-    val wData = Bits(64 bits)
-
-    val readData = ram.readWriteSync(
-      address = addr,
-      write = write,
-      enable = write | read,
-      data = wData
-    )
-  }
+  val neuron = new NeuronCompute
+  val spikeRam = new SpikeRam
+  neuron.io.maskSpike >> spikeRam.io.write
+  neuron.io.acc := True
+  Misc.idleIo(neuron.io)
+  Misc.idleIo(spikeRam.io)
+  idleInterface()
 
   val fsm = new StateMachine {
     import regArea._
 
     val idle = makeInstantEntry()
+    val mapNid = new State
     val compute = new State
+    val waitComputeDone = new StateDelay(4)
     val sendSpikeHead = new State
     val sendSpikeBody = new State
+
+    val mapInfo = NidMap() setAsReg()
+    val destMapOh = B"1" ## mapInfo.src
 
     idle.whenIsActive {
       interface.aer.head.ready := True
       when(interface.aer.head.valid){
-        nidBase := interface.aer.head.nid
-        switch(src){
-          is(0){ addrBase := core0Addr }
-          is(1){ addrBase := core1Addr }
-          is(4){ addrBase := core2Addr }
-          is(5){ addrBase := core3Addr }
-        }
+        mapInfo.nid := interface.aer.head.nid.takeHigh(7).asUInt
+        goto(mapNid)
+      }
+    }
+
+    mapNid.whenIsActive{
+      val cnt = Counter(4)
+      val matched = mapInfo.nid===nidMap(cnt).nid && nidMap(cnt).valid
+      when(!matched){
+        cnt.increment()
+      }otherwise{
+        mapInfo := nidMap(cnt)
         goto(compute)
       }
     }
 
     compute.whenIsActive {
-      neuron.io.fire := addrState(addrBase).accCnt===addrAccCnt(addrBase)
-      neuron.io.acc := addrState(addrBase).accCnt===0
-      neuron.io.current << interface.aer.body
+      neuron.io.fire := accTimes(mapInfo.addr) === mapInfo.acc
+      neuron.io.acc := accTimes(mapInfo.addr) =/= 0
+      neuron.io.current << interface.aer.body.toFlow
+      neuron.io.threadHold := mapInfo.threshold
       when(neuron.io.current.lastFire){
-        when(neuron.io.fire){
-          addrAccCnt(addrBase) := 0
-          goto(sendSpikeHead)
-        }otherwise{
-          addrAccCnt(addrBase) := addrAccCnt(addrBase) + 1
-          goto(idle)
-        }
+        goto(waitComputeDone)
       }
     }
 
+    waitComputeDone
+      .whenIsActive{
+        neuron.io.fire := accTimes(mapInfo.addr) === mapInfo.acc
+        neuron.io.acc := accTimes(mapInfo.addr) =/= 0
+        neuron.io.threadHold := mapInfo.threshold
+      }
+      .whenCompleted{
+        when(neuron.io.fire) {
+          goto(sendSpikeHead)
+          accTimes(mapInfo.addr) := U"00"
+        }otherwise{
+          accTimes(mapInfo.addr) := accTimes(mapInfo.addr) + 1
+          goto(idle)
+        }
+      }
+
     sendSpikeHead.whenIsActive {
-      interface.aer.head.valid := sendDestOh(sendCnt)
-      interface.aer.head.eventType := AER.TYPE.PRE_SPIKE
-      interface.aer.head.nid := nidBase
-      when(!interface.aer.head.valid || interface.aer.head.ready){
+      interface.localSend.valid := destMapOh(sendCnt)
+      interface.localSend.setHead(
+        dest = destMap(sendCnt),
+        src = 2,
+        custom = PacketType.AER.asBits ## B(0, 13 bits) ## AER.TYPE.PRE_SPIKE.asBits ## B(0, 13 bits) ## (mapInfo.nid<<9)
+      )
+      when(!interface.localSend.valid || interface.localSend.ready){
         sendCnt.increment()
       }
-      when(!interface.aer.head.fire){
+      when(interface.localSend.fire){
+        spikeRam.io.readStart := True
         goto(sendSpikeBody)
+      }elsewhen sendCnt.willOverflow {
+        goto(idle)
       }
     }
 
     sendSpikeBody.whenIsActive {
-
+      interface.localSend.arbitrationFrom(spikeRam.io.readRsp)
+      interface.localSend.last := spikeRam.io.readRsp.last
+      interface.localSend.flit := spikeRam.io.readRsp.fragment
+      when(interface.localSend.lastFire){
+        when(sendCnt===0){
+          goto(idle)
+        }otherwise{
+          goto(sendSpikeHead)
+        }
+      }
     }
   }
-   */
-  stub()
 }
 
 class NeuronCompute extends Component {
