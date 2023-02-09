@@ -34,5 +34,5 @@ class StreamFifoDelay2[T <: Data](dataType: T, depth: Int) extends Component{
   }
   io.pop.valid := validHold || fireDelay
   io.pop.payload := Mux(validHold, payloadHold, payloadDelay)
-  fifo.io.pop.ready := io.pop.ready
+  fifo.io.pop.ready := !io.pop.isStall
 }
