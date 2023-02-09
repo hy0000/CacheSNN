@@ -40,20 +40,18 @@ class NeuronCoreAgent(noc:NocInterfaceLocal, clockDomain: ClockDomain)
     jobQueue.enqueue(job)
   }
 
-  var managerCoreRec = 0
+  val coreRecSpike = Array.fill(6)(0)
 
   override def onAER(p: BasePacketSim): Unit = {
     val aerP = AerPacketSim(p)
     val targetJob = jobQueue.find(job => job.nidBase==aerP.nid).get
     for(i <- aerP.data.indices){
-      assert(aerP.data(i) == targetJob.spikeRaw(i), s"${aerP.data(i).toString(2)} ${ targetJob.spikeRaw(i).toString(2)}")
+      assert(aerP.data(i) == targetJob.spikeRaw(i), s"${aerP.data(i).toString(2)} ${ targetJob.spikeRaw(i).toString(2)} at $i")
     }
-    if(aerP.dest==3){
-      managerCoreRec += 1
-    }
+    coreRecSpike(aerP.dest) += 1
   }
 
-  def runTest(): Unit ={
+  def runTest(): Unit = {
     var i = 0
     // reg config
     var nidField, mapField = 0L
@@ -82,7 +80,12 @@ class NeuronCoreAgent(noc:NocInterfaceLocal, clockDomain: ClockDomain)
       }
     }
     // wait fire
-    clockDomain.waitSamplingWhere(managerCoreRec==jobQueue.size)
+    clockDomain.waitSamplingWhere(coreRecSpike(3)==jobQueue.size)
+    for (job <- jobQueue) {
+      for (mapInfo <- job.mapInfo) {
+        assert(coreRecSpike(mapInfo.src)==1)
+      }
+    }
   }
 }
 
@@ -107,7 +110,16 @@ class NeuronCoreTest extends AnyFunSuite {
   }
 
   test("four current fire test"){
-
+    complied.doSim{ dut =>
+      val agent = initDut(dut)
+      val mapInfo = Seq(0, 1, 4, 5).map{src =>
+        val current = Array.fill(512)(Random.nextInt(2))
+        MapInfo(current, src)
+      }
+      val job = NeuronJob(0x0, mapInfo.toArray, threshold = 2)
+      agent.addJob(job)
+      agent.runTest()
+    }
   }
 
   test("four current acc test"){
