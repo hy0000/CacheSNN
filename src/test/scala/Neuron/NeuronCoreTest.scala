@@ -46,7 +46,7 @@ class NeuronCoreAgent(noc:NocInterfaceLocal, clockDomain: ClockDomain)
     val aerP = AerPacketSim(p)
     val targetJob = jobQueue.find(job => job.nidBase==aerP.nid).get
     for(i <- targetJob.spikeRaw.indices){
-      assert(aerP.data(i) == targetJob.spikeRaw(i), s"${aerP.data(i).toString(2)} ${ targetJob.spikeRaw(i).toString(2)} at $i")
+      assert(aerP.data(i) == targetJob.spikeRaw(i), s"${aerP.data(i).toString(16)} ${ targetJob.spikeRaw(i).toString(16)} at $i")
     }
     coreRecSpike(aerP.dest) += 1
   }
@@ -63,7 +63,7 @@ class NeuronCoreAgent(noc:NocInterfaceLocal, clockDomain: ClockDomain)
       nidField |= ((job.nidBase >> 8) | 1) << (i*8)
       mapField |= (((job.mapInfo.length-1)<<6) | (i<<4) | srcOhRaw) << (i*8)
       lenField |= (job.mapInfo.head.current.length - 1)<<(i*4)
-      thresholdField |= job.threshold<<(i*16)
+      thresholdField |= BigInt(job.threshold & 0xFFFF)<<(i*16)
       i += 1
     }
     val threshold0 = (thresholdField & ((1L<<32) - 1)).toLong
@@ -125,11 +125,35 @@ class NeuronCoreTest extends AnyFunSuite {
   }
 
   test("four current acc test"){
-
+    complied.doSim{ dut =>
+      val agent = initDut(dut)
+      val jobs = Seq(0, 1, 4, 5).map{src =>
+        val current = Array.fill(512)(randomInt16)
+        val mapInfo = MapInfo(current, src)
+        NeuronJob(src<<10, Array(mapInfo), threshold = randomInt16)
+      }
+      for(job <- jobs){
+        agent.addJob(job)
+      }
+      agent.runTest()
+    }
   }
 
   test("two layer parallel test"){
+    complied.doSim { dut =>
+      val agent = initDut(dut)
+      val mapInfo0 = Seq(0, 1).map { src =>
+        val current = Array.fill(512)(randomInt16)
+        MapInfo(current, src)
+      }
+      val mapInfo1 = MapInfo(Array.fill(256)(randomInt16), 4)
 
+      val job0 = NeuronJob(0xA000, mapInfo0.toArray, threshold = randomInt16)
+      val job1 = NeuronJob(0xB000, Array(mapInfo1), threshold = randomInt16)
+      agent.addJob(job0)
+      agent.addJob(job1)
+      agent.runTest()
+    }
   }
 }
 
