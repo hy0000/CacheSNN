@@ -39,6 +39,7 @@ class RouterDeMuxLocal(routerConfig: RouterConfig) extends Component {
     }
     ret
   }
+  localWithSrc.setBlocked()
 
   val dirLeft = localWithSrc.dest < routerConfig.coordinate && localWithSrc.isFirst
   val dirRight = localWithSrc.dest > routerConfig.coordinate && localWithSrc.isFirst
@@ -49,12 +50,12 @@ class RouterDeMuxLocal(routerConfig: RouterConfig) extends Component {
   val selRight = dirRight || selRightReg
 
   Misc.idleStream(io.nocLeftOut, io.nocRightOut)
-  io.localIn.setBlocked()
-
   when(selLeft){
     io.nocLeftOut << localWithSrc
   }elsewhen selRight {
     io.nocRightOut << localWithSrc
+  }otherwise{
+    assert(!localWithSrc.valid, s"noc packet dest should different with src", FAILURE)
   }
 }
 

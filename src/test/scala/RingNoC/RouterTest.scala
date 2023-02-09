@@ -41,6 +41,57 @@ class RouterDeMuxTest extends AnyFunSuite {
   }
 }
 
+class RouterDeMuxLocalTest extends AnyFunSuite {
+  val routerConfig = RouterConfig(Random.nextInt(16))
+  val complied = simConfig.compile(new RouterDeMuxLocal(routerConfig))
+
+  test("route test"){
+    complied.doSim{ dut =>
+      dut.clockDomain.forkStimulus(2)
+      SimTimeout(100000)
+      val nocInDriver = new NocInterfaceDriver(dut.io.localIn, dut.clockDomain)
+      val packets = Seq.fill(100)(
+        NocPacket(
+          dest = Random.nextInt(16),
+          src = routerConfig.coordinate,
+          custom = BigInt(48, Random),
+          data = Seq.fill(Random.nextInt(256))(BigInt(64, Random))
+        )
+      ).filter(p => p.dest != routerConfig.coordinate)
+      nocInDriver.sendPacket(packets)
+
+      StreamReadyRandomizer(dut.io.nocLeftOut, dut.clockDomain)
+      StreamReadyRandomizer(dut.io.nocRightOut, dut.clockDomain)
+      val leftPacket = packets.filter(p => p.dest<routerConfig.coordinate)
+      val rightPacket = packets.filter(p => p.dest>routerConfig.coordinate)
+      val leftAsserter = new NocInterfaceAsserter(dut.io.nocLeftOut, dut.clockDomain)
+      val rightAsserter = new NocInterfaceAsserter(dut.io.nocRightOut, dut.clockDomain)
+      leftAsserter.addPacket(leftPacket)
+      rightAsserter.addPacket(rightPacket)
+      leftAsserter.waiteComplete()
+      rightAsserter.waiteComplete()
+    }
+  }
+
+  test("error packet test"){
+    intercept[Throwable]{
+      complied.doSim{dut =>
+        dut.clockDomain.forkStimulus(2)
+        SimTimeout(100000)
+        val errorPacket = NocPacket(
+          dest = routerConfig.coordinate,
+          src = routerConfig.coordinate,
+          custom = 0
+        )
+        val driver = new NocInterfaceDriver(dut.io.localIn, dut.clockDomain)
+        driver.sendPacket(errorPacket)
+        dut.clockDomain.waitSamplingWhere(dut.io.localIn.valid.toBoolean)
+        dut.clockDomain.waitSampling()
+      }
+    }
+  }
+}
+
 class RouterTest extends AnyFunSuite {
 
 }
