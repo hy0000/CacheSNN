@@ -114,7 +114,7 @@ class RouterTest extends AnyFunSuite {
     SimTimeout(1000000)
     StreamReadyRandomizer(dut.io.leftOut, dut.clockDomain)
     StreamReadyRandomizer(dut.io.rightOut, dut.clockDomain)
-    StreamReadyRandomizer(dut.io.leftOut, dut.clockDomain)
+    StreamReadyRandomizer(dut.io.local.rec, dut.clockDomain)
     RouterAgent(dut)
   }
 

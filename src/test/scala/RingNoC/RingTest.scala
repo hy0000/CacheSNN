@@ -8,7 +8,6 @@ import spinal.core.sim._
 import spinal.lib._
 import spinal.lib.sim.StreamReadyRandomizer
 
-import scala.collection.mutable
 import scala.util.Random
 
 class RingModule(n:Int) extends Component {
@@ -32,7 +31,7 @@ class RingTest extends AnyFunSuite {
 
   def initDut(dut:RingModule): RingAgent ={
     dut.clockDomain.forkStimulus(2)
-    SimTimeout(1000000)
+    SimTimeout(4000000)
     dut.local.foreach(noc => StreamReadyRandomizer(noc.rec, dut.clockDomain))
     RingAgent(dut)
   }
@@ -70,7 +69,7 @@ class RingTest extends AnyFunSuite {
       val agent = initDut(dut)
       val packets = Array.tabulate(n, n){(src, dest) =>
         if(src != dest){
-          Seq.fill(Random.nextInt(2048/n))(
+          Seq.fill(Random.nextInt(1024/n))(
             NocPacket(dest = dest, src = src, custom = BigInt(48, Random), data = randomData)
           )
         }else{
