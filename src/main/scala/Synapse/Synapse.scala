@@ -99,7 +99,11 @@ class Synapse extends Component {
     val LTD_QUERY_Y, WEIGHT, CURRENT = Stageable(Bits(64 bits))
 
     val s0 = new Stage {
-      valid := io.synapseEvent.valid && eventDone.isFree
+      val validEnable = RegInit(True) // avoid both rw same cache bank
+      when(!valid){
+        validEnable := !validEnable
+      }
+      valid := io.synapseEvent.valid && eventDone.isFree && validEnable
       // address bursting and send post spike read cmd
       val addrOffset = Counter(io.csr.len.getWidth bits, valid)
       io.synapseEvent.ready := False
