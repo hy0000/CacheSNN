@@ -112,6 +112,9 @@ class RouterTest extends AnyFunSuite {
   def initDut(dut:Router):RouterAgent = {
     dut.clockDomain.forkStimulus(2)
     SimTimeout(1000000)
+    StreamReadyRandomizer(dut.io.leftOut, dut.clockDomain)
+    StreamReadyRandomizer(dut.io.rightOut, dut.clockDomain)
+    StreamReadyRandomizer(dut.io.leftOut, dut.clockDomain)
     RouterAgent(dut)
   }
 
