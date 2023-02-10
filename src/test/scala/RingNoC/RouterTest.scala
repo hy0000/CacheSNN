@@ -174,4 +174,41 @@ class RouterTest extends AnyFunSuite {
       agent.localOutMonitor.waitComplete()
     }
   }
+
+  test("random test"){
+    complied.doSim { dut =>
+      val agent = initDut(dut)
+      val id = routerConfig.coordinate
+      val leftId = (id + 16 - 1) % 16
+      val rightId = (id + 1) % 16
+
+      def genPacket(src:Int, dest0:Int, dest1:Int): Seq[NocPacket] ={
+        Seq.fill(1000)(
+          NocPacket(
+            dest = if(Random.nextBoolean()) dest0 else dest1,
+            src = src,
+            custom = BigInt(48, Random),
+            data = Seq.fill(Random.nextInt(256))(BigInt(64, Random))
+          )
+        )
+      }
+
+      val leftSendPacket = genPacket(leftId, id, rightId)
+      val localSendPacket = genPacket(id, leftId, rightId)
+      val rightSendPacket = genPacket(rightId, id, leftId)
+      agent.leftInDriver.sendPacket(leftSendPacket)
+      agent.localInDriver.sendPacket(localSendPacket)
+      agent.rightInDriver.sendPacket(rightSendPacket)
+
+      val leftRecPacket = (localSendPacket ++ rightSendPacket).filter(p => p.dest==leftId)
+      val localRecPacket = (leftSendPacket ++ rightSendPacket).filter(p => p.dest==id)
+      val rightRecPacket = (localSendPacket ++ leftSendPacket).filter(p => p.dest==rightId)
+      agent.localOutMonitor.addPackets(localRecPacket)
+      agent.leftOutMonitor.addPackets(leftRecPacket)
+      agent.rightOutMonitor.addPackets(rightRecPacket)
+      agent.localOutMonitor.waitComplete()
+      agent.leftOutMonitor.waitComplete()
+      agent.rightOutMonitor.waitComplete()
+    }
+  }
 }
