@@ -84,7 +84,9 @@ class SpikeCacheManagerAgent(dut:SpikeCacheManager) {
   }
 
   def waitDone(): Unit = {
-    def queueEmpty:Boolean = Seq(spikeInQueue, missQueue, hitQueue, failQueue, doneQueue)
+    dut.clockDomain.waitSamplingWhere(spikeInQueue.isEmpty)
+    dut.clockDomain.waitSamplingWhere(!dut.io.spikeIn.valid.toBoolean)
+    def queueEmpty:Boolean = Seq(missQueue, hitQueue, failQueue, doneQueue)
       .map(_.isEmpty).reduce(_ && _)
     dut.clockDomain.waitSamplingWhere(queueEmpty)
     dut.clockDomain.waitSamplingWhere(dut.io.free.toBoolean)
