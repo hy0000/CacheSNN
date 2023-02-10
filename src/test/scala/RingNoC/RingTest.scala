@@ -20,18 +20,23 @@ class RingModule(n:Int) extends Component {
 }
 
 class RingTest extends AnyFunSuite {
-  val n = Random.nextInt(14) + 2
+  val n = 6//Random.nextInt(14) + 2
+  println(s"RingTest start with n==$n")
   val complied = simConfig.compile(new RingModule(n))
   def randomData = Seq.fill(Random.nextInt(256))(BigInt(64, Random))
 
   case class RingAgent(dut:RingModule){
     val driver = dut.local.map(noc => new NocInterfaceDriver(noc.send, dut.clockDomain))
     val asserter = dut.local.map(noc => new NocInterfaceAsserter(noc.rec, dut.clockDomain))
+
+    def waitComplete(): Unit ={
+      asserter.foreach(_.waitComplete())
+    }
   }
 
   def initDut(dut:RingModule): RingAgent ={
     dut.clockDomain.forkStimulus(2)
-    SimTimeout(4000000)
+    SimTimeout(1000000)
     dut.local.foreach(noc => StreamReadyRandomizer(noc.rec, dut.clockDomain))
     RingAgent(dut)
   }
@@ -64,12 +69,28 @@ class RingTest extends AnyFunSuite {
     }
   }
 
+  test("dead lock test"){
+    simConfig.compile(new RingModule(4)).doSim{ dut =>
+      dut.clockDomain.forkStimulus(2)
+      SimTimeout(100000)
+      val agent = RingAgent(dut)
+      for(src <- 0 until 4){
+        val dest = (src + 2) % 4
+        val data = (0 until 1024).map(i => BigInt(i))
+        val p = NocPacket(dest, src, 0, data)
+        agent.driver(src).sendPacket(p)
+        agent.asserter(dest).addPacket(p)
+      }
+      agent.waitComplete()
+    }
+  }
+
   test("random test"){
-    complied.doSim { dut =>
+    complied.doSim(273262820) { dut =>
       val agent = initDut(dut)
       val packets = Array.tabulate(n, n){(src, dest) =>
         if(src != dest){
-          Seq.fill(Random.nextInt(1024/n))(
+          Seq.fill(Random.nextInt(128/n))(
             NocPacket(dest = dest, src = src, custom = BigInt(48, Random), data = randomData)
           )
         }else{

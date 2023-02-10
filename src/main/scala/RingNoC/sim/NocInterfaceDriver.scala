@@ -10,6 +10,7 @@ class NocInterfaceDriver(noc:Stream[Fragment[NocInterface]], clockDomain: ClockD
 
   val (driver, queue) = StreamDriver.queue(noc, clockDomain)
   driver.transactionDelay = () => 0
+  driver.delay = 0
 
   def sendPacket(ps:NocPacket*): Unit ={
     for(p <- ps){
