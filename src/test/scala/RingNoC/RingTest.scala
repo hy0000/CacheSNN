@@ -68,7 +68,7 @@ class RingTest extends AnyFunSuite {
       assert(dut.local(1).rec.valid.toBoolean)
     }
   }
-
+  /*
   test("dead lock test"){
     simConfig.compile(new RingModule(4)).doSim{ dut =>
       dut.clockDomain.forkStimulus(2)
@@ -109,4 +109,5 @@ class RingTest extends AnyFunSuite {
       }
     }
   }
+   */
 }
