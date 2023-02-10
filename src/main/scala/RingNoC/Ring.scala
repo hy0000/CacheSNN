@@ -19,7 +19,7 @@ case class Ring(){
 
   def build(): Unit ={
     val routers = (0 until nodes.size).map{coordinate =>
-      val config = RouterConfig(coordinate)
+      val config = RouterConfig(coordinate, nodes.size)
       val router = new Router(config).setDefinitionName(s"ringRouter_$coordinate")
       router.io.local <> nodes(coordinate)
       router

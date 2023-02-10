@@ -3,16 +3,14 @@ package RingNoC
 import CacheSNN.CacheSnnTest._
 import RingNoC.sim._
 import org.scalatest.funsuite.AnyFunSuite
-import spinal.core._
 import spinal.core.sim._
-import spinal.lib._
 import spinal.lib.sim.StreamReadyRandomizer
 
-import scala.collection.mutable
+import scala.util
 import scala.util.Random
 
 class RouterDeMuxTest extends AnyFunSuite {
-  val routerConfig = RouterConfig(Random.nextInt(16))
+  val routerConfig = RouterConfig(0, 16)
   val complied = simConfig.compile(new RouterDeMux(routerConfig))
 
   test("route test"){
@@ -45,28 +43,35 @@ class RouterDeMuxTest extends AnyFunSuite {
 }
 
 class RouterDeMuxLocalTest extends AnyFunSuite {
-  val routerConfig = RouterConfig(Random.nextInt(16))
-  val complied = simConfig.compile(new RouterDeMuxLocal(routerConfig))
 
-  test("route test"){
+  def tb(routerConfig: RouterConfig): Unit ={
+    val complied = simConfig.compile(new RouterDeMuxLocal(routerConfig))
     complied.doSim{ dut =>
       dut.clockDomain.forkStimulus(2)
       SimTimeout(100000)
       val nocInDriver = new NocInterfaceDriver(dut.io.localIn, dut.clockDomain)
-      val packets = Seq.fill(100)(
+      val leftN = if (routerConfig.n % 2 == 0) routerConfig.n / 2 - 1 else routerConfig.n / 2
+      val rightN = routerConfig.n / 2
+      val leftDest = (1 to leftN).map { leftDis =>
+        (routerConfig.coordinate - leftDis + routerConfig.n) % routerConfig.n
+      }
+      val rightDest = (1 to rightN).map { rightDis =>
+        (routerConfig.coordinate + rightDis) % routerConfig.n
+      }
+
+      def genPacket(dest:Int):NocPacket = {
         NocPacket(
-          dest = Random.nextInt(16),
+          dest = dest,
           src = routerConfig.coordinate,
           custom = BigInt(48, Random),
           data = Seq.fill(Random.nextInt(256))(BigInt(64, Random))
         )
-      ).filter(p => p.dest != routerConfig.coordinate)
-      nocInDriver.sendPacket(packets)
-
+      }
+      val leftPacket = leftDest.map(genPacket)
+      val rightPacket = rightDest.map(genPacket)
+      nocInDriver.sendPacket(leftPacket++rightPacket)
       StreamReadyRandomizer(dut.io.nocLeftOut, dut.clockDomain)
       StreamReadyRandomizer(dut.io.nocRightOut, dut.clockDomain)
-      val leftPacket = packets.filter(p => p.dest<routerConfig.coordinate)
-      val rightPacket = packets.filter(p => p.dest>routerConfig.coordinate)
       val leftAsserter = new NocInterfaceAsserter(dut.io.nocLeftOut, dut.clockDomain)
       val rightAsserter = new NocInterfaceAsserter(dut.io.nocRightOut, dut.clockDomain)
       leftAsserter.addPacket(leftPacket)
@@ -76,14 +81,26 @@ class RouterDeMuxLocalTest extends AnyFunSuite {
     }
   }
 
+  test("route test"){
+    val n = Random.nextInt(14) + 2
+    val configs = Seq(
+      RouterConfig(0, 4),
+      RouterConfig(0, 3),
+      RouterConfig(2, 5),
+      RouterConfig(Random.nextInt(n), n)
+    )
+    configs.foreach(tb)
+  }
+
   test("error packet test"){
     intercept[Throwable]{
+      val complied = simConfig.compile(new RouterDeMuxLocal(RouterConfig(1, 4)))
       complied.doSim{dut =>
         dut.clockDomain.forkStimulus(2)
         SimTimeout(100000)
         val errorPacket = NocPacket(
-          dest = routerConfig.coordinate,
-          src = routerConfig.coordinate,
+          dest = 1,
+          src = 1,
           custom = 0
         )
         val driver = new NocInterfaceDriver(dut.io.localIn, dut.clockDomain)
@@ -96,7 +113,7 @@ class RouterDeMuxLocalTest extends AnyFunSuite {
 }
 
 class RouterTest extends AnyFunSuite {
-  val routerConfig = RouterConfig(Random.nextInt(16))
+  val routerConfig = RouterConfig(Random.nextInt(4), 4)
   val complied = simConfig.compile(new Router(routerConfig))
 
   case class RouterAgent(dut:Router){
@@ -122,8 +139,8 @@ class RouterTest extends AnyFunSuite {
     complied.doSim { dut =>
       val agent = initDut(dut)
       val id = routerConfig.coordinate
-      val leftId = (id+16-1) % 16
-      val rightId = (id + 1) % 16
+      val leftId = (id+routerConfig.n-1) % routerConfig.n
+      val rightId = (id + 1) % routerConfig.n
       def randomData = Seq.fill(Random.nextInt(256))(BigInt(64, Random))
 
       val localToLeftP = NocPacket(leftId, id, 0, randomData)
@@ -154,8 +171,8 @@ class RouterTest extends AnyFunSuite {
     complied.doSim { dut =>
       val agent = initDut(dut)
       val id = routerConfig.coordinate
-      val leftId = (id + 16 - 1) % 16
-      val rightId = (id + 1) % 16
+      val leftId = (id + routerConfig.n - 1) % routerConfig.n
+      val rightId = (id + 1) % routerConfig.n
 
       def genPacket(src:Int, dest0:Int, dest1:Int): Seq[NocPacket] ={
         Seq.fill(1000)(

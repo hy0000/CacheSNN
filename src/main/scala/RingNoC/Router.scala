@@ -1,11 +1,10 @@
 package RingNoC
 
 import Util.{Misc, StreamFifoDelay2}
-import spinal.core.Component.push
 import spinal.core._
 import spinal.lib._
 
-case class RouterConfig(coordinate:Int)
+case class RouterConfig(coordinate:Int, n:Int)
 
 class RouterDeMux(routerConfig: RouterConfig) extends Component {
   val io = new Bundle {
@@ -42,8 +41,16 @@ class RouterDeMuxLocal(routerConfig: RouterConfig) extends Component {
   }
   localWithSrc.setBlocked()
 
-  val dirLeft = localWithSrc.dest < routerConfig.coordinate && localWithSrc.isFirst
-  val dirRight = localWithSrc.dest > routerConfig.coordinate && localWithSrc.isFirst
+  val leftN = if(routerConfig.n % 2 == 0) routerConfig.n / 2 - 1 else routerConfig.n / 2
+  val rightN = routerConfig.n / 2
+  val leftDest = (1 to leftN).map{ leftDis =>
+    (routerConfig.coordinate - leftDis + routerConfig.n) % routerConfig.n
+  }
+  val rightDest = (1 to rightN).map{ rightDis =>
+    (routerConfig.coordinate + rightDis) % routerConfig.n
+  }
+  val dirLeft = leftDest.map(_ === localWithSrc.dest).orR && localWithSrc.isFirst
+  val dirRight = rightDest.map(_ === localWithSrc.dest).orR && localWithSrc.isFirst
   val selLeftReg, selRightReg = RegInit(False)
   selLeftReg setWhen dirLeft clearWhen localWithSrc.lastFire
   selRightReg setWhen dirRight clearWhen localWithSrc.lastFire
