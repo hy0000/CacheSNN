@@ -38,8 +38,8 @@ class RouterDeMuxTest extends AnyFunSuite {
       val localOutAsserter = new NocInterfaceAsserter(dut.io.localOut, dut.clockDomain)
       nocOutAsserter.addPacket(nocPacket)
       localOutAsserter.addPacket(localPacket)
-      nocOutAsserter.waiteComplete()
-      localOutAsserter.waiteComplete()
+      nocOutAsserter.waitComplete()
+      localOutAsserter.waitComplete()
     }
   }
 }
@@ -71,8 +71,8 @@ class RouterDeMuxLocalTest extends AnyFunSuite {
       val rightAsserter = new NocInterfaceAsserter(dut.io.nocRightOut, dut.clockDomain)
       leftAsserter.addPacket(leftPacket)
       rightAsserter.addPacket(rightPacket)
-      leftAsserter.waiteComplete()
-      rightAsserter.waiteComplete()
+      leftAsserter.waitComplete()
+      rightAsserter.waitComplete()
     }
   }
 
@@ -99,42 +99,14 @@ class RouterTest extends AnyFunSuite {
   val routerConfig = RouterConfig(Random.nextInt(16))
   val complied = simConfig.compile(new Router(routerConfig))
 
-  class RouterOutMonitor(port:Stream[Fragment[NocInterface]], clockDomain: ClockDomain)
-    extends NocInterfaceMonitor(port, clockDomain){
-
-    val targetPacket = Array.fill(16)(mutable.Queue[NocPacket]())
-    usingReadyRandomizer()
-
-    override def onPacket(p: NocPacket) = {
-      val tp = targetPacket(p.src).dequeue()
-      assert(p.equals(tp))
-    }
-
-    def addPacket(p:NocPacket): Unit ={
-      targetPacket(p.src).enqueue(p)
-    }
-
-    def addPackets(ps:Seq[NocPacket]): Unit ={
-      for(p <- ps){
-        addPacket(p)
-      }
-    }
-
-    def waitComplete(): Unit ={
-      for(tpQueue <- targetPacket){
-        clockDomain.waitSamplingWhere(tpQueue.isEmpty)
-      }
-    }
-  }
-
   case class RouterAgent(dut:Router){
     val leftInDriver = new NocInterfaceDriver(dut.io.leftIn, dut.clockDomain)
     val rightInDriver = new NocInterfaceDriver(dut.io.rightIn, dut.clockDomain)
     val localInDriver = new NocInterfaceDriver(dut.io.local.send, dut.clockDomain)
 
-    val leftOutMonitor = new RouterOutMonitor(dut.io.leftOut, dut.clockDomain)
-    val rightOutMonitor = new RouterOutMonitor(dut.io.rightOut, dut.clockDomain)
-    val localOutMonitor = new RouterOutMonitor(dut.io.local.rec, dut.clockDomain)
+    val leftOutMonitor = new NocInterfaceAsserter(dut.io.leftOut, dut.clockDomain)
+    val rightOutMonitor = new NocInterfaceAsserter(dut.io.rightOut, dut.clockDomain)
+    val localOutMonitor = new NocInterfaceAsserter(dut.io.local.rec, dut.clockDomain)
   }
 
   def initDut(dut:Router):RouterAgent = {
@@ -203,9 +175,9 @@ class RouterTest extends AnyFunSuite {
       val leftRecPacket = (localSendPacket ++ rightSendPacket).filter(p => p.dest==leftId)
       val localRecPacket = (leftSendPacket ++ rightSendPacket).filter(p => p.dest==id)
       val rightRecPacket = (localSendPacket ++ leftSendPacket).filter(p => p.dest==rightId)
-      agent.localOutMonitor.addPackets(localRecPacket)
-      agent.leftOutMonitor.addPackets(leftRecPacket)
-      agent.rightOutMonitor.addPackets(rightRecPacket)
+      agent.localOutMonitor.addPacket(localRecPacket)
+      agent.leftOutMonitor.addPacket(leftRecPacket)
+      agent.rightOutMonitor.addPacket(rightRecPacket)
       agent.localOutMonitor.waitComplete()
       agent.leftOutMonitor.waitComplete()
       agent.rightOutMonitor.waitComplete()

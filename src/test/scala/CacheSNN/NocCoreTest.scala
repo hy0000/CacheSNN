@@ -39,7 +39,7 @@ class NocCoreTest extends AnyFunSuite {
       }
       localSendDriver.sendPacket(packets)
       nocSendMonitor.addPacket(packets)
-      nocSendMonitor.waiteComplete()
+      nocSendMonitor.waitComplete()
     }
   }
 }
@@ -95,7 +95,7 @@ class NocUnPackerTest extends AnyFunSuite {
 
       agent.nocRecDriver.sendPacket(errorPacket)
       agent.nocSendMonitor.addPacket(errorPacketRsp)
-      agent.nocSendMonitor.waiteComplete()
+      agent.nocSendMonitor.waitComplete()
     }
   }
 
@@ -113,7 +113,7 @@ class NocUnPackerTest extends AnyFunSuite {
         val writeRspPacket = writePacket.toRspPacket()
         val readRspPacket = readPacket.toRspPacket(field2 = data)
         agent.nocSendMonitor.addPacket(writeRspPacket, readRspPacket)
-        agent.nocSendMonitor.waiteComplete()
+        agent.nocSendMonitor.waitComplete()
       }
     }
   }
@@ -133,7 +133,7 @@ class NocUnPackerTest extends AnyFunSuite {
         val writeRspPacket = writePacket.toRspPacket()
         val readRspPacket = readPacket.toRspPacket(data = data)
         agent.nocSendMonitor.addPacket(writeRspPacket, readRspPacket)
-        agent.nocSendMonitor.waiteComplete()
+        agent.nocSendMonitor.waitComplete()
       }
     }
   }

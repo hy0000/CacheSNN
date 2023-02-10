@@ -8,11 +8,11 @@ import spinal.lib._
 import scala.collection.mutable
 
 class NocInterfaceAsserter(noc: Stream[Fragment[NocInterface]], clockDomain: ClockDomain) {
-  val monitorQueue = mutable.Queue[NocPacket]()
+  val monitorQueue = Array.fill(16)(mutable.Queue[NocPacket]())
 
   def addPacket(ps: NocPacket*): Unit = {
     for (p <- ps) {
-      monitorQueue.enqueue(p)
+      monitorQueue(p.src).enqueue(p)
     }
   }
 
@@ -22,15 +22,18 @@ class NocInterfaceAsserter(noc: Stream[Fragment[NocInterface]], clockDomain: Clo
     }
   }
 
-  def waiteComplete(): Unit = {
-    clockDomain.waitSamplingWhere(monitorQueue.isEmpty)
+  def waitComplete(): Unit = {
+    for (pq <- monitorQueue) {
+      clockDomain.waitSamplingWhere(pq.isEmpty)
+    }
   }
 
   noc.ready #= true
   fork {
     while (true) {
       clockDomain.waitSamplingWhere(noc.valid.toBoolean && noc.ready.toBoolean)
-      val packet = monitorQueue.head
+      val src = ((noc.flit.toBigInt>>52) & 0xF).toInt
+      val packet = monitorQueue(src).head
       // assert head
       assert(noc.flit.toBigInt == packet.head, s"${noc.flit.toBigInt.toString(16)} ${packet.head.toString(16)}")
       if (packet.headOnly) {
@@ -44,7 +47,7 @@ class NocInterfaceAsserter(noc: Stream[Fragment[NocInterface]], clockDomain: Clo
           assert(noc.last.toBoolean == (i == packet.data.length - 1))
         }
       }
-      monitorQueue.dequeue()
+      monitorQueue(src).dequeue()
     }
   }
 }
