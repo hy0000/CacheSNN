@@ -27,7 +27,7 @@ class CacheSNN extends Component {
     val ctrl = slave(Apb3(CacheSNN.apbConfig))
   }
 
-  val synapseCores = Seq.fill(2)(new SynapseCore)
+  val synapseCores = Seq.fill(4)(new SynapseCore)
   val neuronCore = new NeuronCore
   val manager = new Manager
 
