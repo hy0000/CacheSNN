@@ -1,18 +1,18 @@
 package Manager
 
-import CacheSNN.{NocCore, CacheSNN}
+import CacheSNN.{CacheSNN, NocCore}
 import spinal.core._
 import spinal.lib._
-import spinal.lib.bus.amba3.apb.Apb3
-import spinal.lib.bus.amba4.axi.{Axi4, Axi4Config}
+import spinal.lib.bus.amba4.axi._
+import spinal.lib.bus.amba4.axilite._
 
 class Manager extends NocCore {
   override val supportAsMemMaster = true
   override val supportAsMemSlave = false
 
   val io = new Bundle {
-    val externalMemory = master(Axi4(CacheSNN.externalMemoryAxi4Config))
-    val ctrl = slave(Apb3(CacheSNN.apbConfig))
+    val externalMemory = master(Axi4(CacheSNN.axiMasterConfig))
+    val ctrl = slave(AxiLite4(CacheSNN.axiLiteSlaveConfig))
   }
   stub()
 }

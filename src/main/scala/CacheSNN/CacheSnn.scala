@@ -6,16 +6,16 @@ import RingNoC.Ring
 import Synapse.SynapseCore
 import spinal.core._
 import spinal.lib._
-import spinal.lib.bus.amba3.apb.{Apb3, Apb3Config}
-import spinal.lib.bus.amba4.axi.{Axi4, Axi4Config}
+import spinal.lib.bus.amba4.axi._
+import spinal.lib.bus.amba4.axilite._
 
 object CacheSNN {
-  val externalMemoryAxi4Config = Axi4Config(
+  val axiMasterConfig = Axi4Config(
     addressWidth = 32,
     dataWidth = 64,
     idWidth = 2
   )
-  val apbConfig = Apb3Config(32, 64)
+  val axiLiteSlaveConfig = AxiLite4Config(32, 32)
 
   val neuronCoreId = 3
   val managerId = 4
@@ -23,8 +23,8 @@ object CacheSNN {
 
 class CacheSNN extends Component {
   val io = new Bundle {
-    val externalMemory = master(Axi4(CacheSNN.externalMemoryAxi4Config))
-    val ctrl = slave(Apb3(CacheSNN.apbConfig))
+    val externalMemory = master(Axi4(CacheSNN.axiMasterConfig))
+    val ctrl = slave(AxiLite4(CacheSNN.axiLiteSlaveConfig))
   }
 
   val synapseCores = Seq.fill(4)(new SynapseCore)
