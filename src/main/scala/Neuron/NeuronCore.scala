@@ -17,6 +17,7 @@ import spinal.lib.pipeline._
  * send spikes to synapse core and manager core
  */
 class NeuronCore extends NocCore {
+  override val supportAsMemMaster = false
 
   case class NidMap() extends Bundle {
     val valid = Bool()

@@ -143,6 +143,7 @@ class ExpLutQuery extends Bundle with IMasterSlave {
 
 class SynapseCore extends NocCore {
   import SynapseCore.AddrMapping
+  override val supportAsMemMaster = false
 
   val synapseCtrl = new SynapseCtrl
   val synapse = new Synapse

@@ -32,7 +32,7 @@ object NocCore {
 abstract class NocCore extends Component {
   val noc = master(NocInterfaceLocal())
 
-  val supportAsMemMaster:Boolean = false
+  val supportAsMemMaster:Boolean = true
   val supportAsMemSlave:Boolean = true
 
   val interface = new Bundle {
