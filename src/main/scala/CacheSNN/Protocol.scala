@@ -66,6 +66,16 @@ object AER {
   }
 }
 
+object BasePacketHead {
+  def apply(headRaw:Bits): BasePacketHead ={
+    val bph = new BasePacketHead
+    bph.dest := headRaw(63 downto 60).asUInt
+    bph.src := headRaw(55 downto 52).asUInt
+    bph.assignFromNocCustomField(headRaw(47 downto 0))
+    bph
+  }
+}
+
 class BasePacketHead extends Bundle {
   val dest = UInt(4 bits)
   val src = UInt(4 bits)
@@ -89,6 +99,12 @@ class BasePacketHead extends Bundle {
 
   def toNocRawHead: Bits = {
     dest ## B"0000" ## src ## B"0000" ## toNocCustomField
+  }
+
+  def isHeadOnlyPacket: Bool = {
+    packetType===PacketType.R_CMD ||
+      packetType===PacketType.R_RSP ||
+      (!write && (packetType===PacketType.D_CMD || packetType===PacketType.D_RSP))
   }
 }
 
