@@ -25,6 +25,7 @@ case class BpCmd() extends Bundle {
 
 class BpManager extends Component {
   val io = new Bundle {
+    val free = out Bool()
     val cmd = slave(Stream(BpCmd()))
     val localSend = master(NocInterface())
     val readRsp = slave(BaseReadRsp())
@@ -33,9 +34,11 @@ class BpManager extends Component {
   }
 
   val cmdBuffer = Mem(Flow(BpCmd()), 16)
-  val cmdIssuePtr = Counter(5 bits)
+  val cmdIssuePtr = Counter(5 bits, io.cmd.fire)
   val cmdRspPtr = Counter(5 bits)
   val cmdProcessPtr = Counter(5 bits)
+
+  io.free := cmdRspPtr===cmdIssuePtr
 
   val cmdIssueArea = new Area {
     val wrapped = cmdIssuePtr.msb ^ cmdRspPtr.msb
@@ -51,24 +54,29 @@ class BpManager extends Component {
   Misc.clearIO(io)
 
   val cmdProcessFsm = new StateMachine {
-    val nocHead = makeInstantEntry()
+    val idle = makeInstantEntry()
+    val nocHead = new State
     val axiReadCmd, axiReadData = new State
     val ptrIncr = new State
 
     val cmd = cmdBuffer.readSync(cmdProcessPtr(3 downto 0))
-    val cmdValid = cmdProcessPtr=/=cmdIssuePtr
     val isDataCmdWrite = cmd.write && !cmd.useRegCmd
 
+    idle.whenIsActive{
+      when(cmdProcessPtr=/=cmdIssuePtr){
+        goto(nocHead)
+      }
+    }
+
     nocHead.whenIsActive{
-      when(cmdValid){
-        io.localSend.flit := cmd.toNocHead(id = cmdIssuePtr(3 downto 0))
-        io.localSend.last := !isDataCmdWrite
-        when(io.localSend.ready){
-          when(isDataCmdWrite) {
-            goto(axiReadCmd)
-          } otherwise {
-            goto(ptrIncr)
-          }
+      io.localSend.valid := True
+      io.localSend.flit := cmd.toNocHead(id = cmdProcessPtr(3 downto 0))
+      io.localSend.last := !isDataCmdWrite
+      when(io.localSend.ready){
+        when(isDataCmdWrite) {
+          goto(axiReadCmd)
+        } otherwise {
+          goto(ptrIncr)
         }
       }
     }
@@ -93,6 +101,7 @@ class BpManager extends Component {
 
     ptrIncr.whenIsActive{
       cmdProcessPtr.increment()
+      goto(idle)
     }
   }
 
@@ -110,14 +119,19 @@ class BpManager extends Component {
       write = bufferWrite
     )
 
+    val readPrior = RegInit(True)
+    readPrior.clearWhen(io.readRsp.lastFire && io.writeRsp.valid)
+    readPrior.setWhen(io.writeRsp.fire)
+
     idle.whenIsActive {
-      when(io.readRsp.valid){
+      when(io.readRsp.valid && readPrior){
         bufferRead := True
         bufferAddr := io.readRsp.id
         goto(axiWriteCmd)
       }elsewhen io.writeRsp.valid {
         bufferWrite := True
         bufferAddr := io.writeRsp.id
+        io.writeRsp.ready := True
         goto(ptrIncr0)
       }
     }
@@ -125,7 +139,7 @@ class BpManager extends Component {
     axiWriteCmd.whenIsActive {
       io.axi.writeCmd.valid := True
       io.axi.writeCmd.addr := cmd.mAddr
-      io.axi.writeCmd.len := cmd.useRegCmd ? cmd.field1 | 0
+      io.axi.writeCmd.len := !cmd.useRegCmd ? cmd.field1 | 0
       when(io.axi.writeCmd.ready){
         goto(axiWriteData)
       }
@@ -135,6 +149,8 @@ class BpManager extends Component {
       io.axi.writeData.arbitrationFrom(io.readRsp)
       io.axi.writeData.data := io.readRsp.data
       io.axi.writeData.last := io.readRsp.last
+      bufferWrite := True
+      bufferAddr := io.readRsp.id
       when(io.readRsp.lastFire){
         goto(axiWriteAck)
       }
@@ -154,11 +170,11 @@ class BpManager extends Component {
     }
 
     ptrIncr1.whenIsActive{
-      when(cmd.valid){
-        goto(idle)
-      }otherwise{
+      when(!cmd.valid && !io.free){
         cmdRspPtr.increment()
         goto(ptrIncr0)
+      }otherwise{
+        goto(idle)
       }
     }
   }
