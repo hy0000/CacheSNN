@@ -13,6 +13,8 @@ import spinal.lib.sim._
 import scala.collection.mutable
 import scala.util.Random
 
+case class AccessInfo(dest:Int, addr:Long, mAddr:Long, data:Seq[BigInt])
+
 class BpManagerAgent(dut:BpManager) {
   val mainMem = AxiMemorySim(dut.io.axi, dut.clockDomain, AxiMemorySimConfig())
   mainMem.start()
@@ -50,21 +52,21 @@ class BpManagerAgent(dut:BpManager) {
   new NocInterfaceMonitor(dut.io.localSend, dut.clockDomain) {
     override def onPacket(p: NocPacket) = {
       val bp = BasePacketSim(p)
-      val (addrBase, len, data, width) = if (bp.packetType == PacketType.R_CMD) {
-        (bp.field1.toLong, 0, Seq(bp.field2), 4)
+      val (addrBase, len, data) = if (bp.packetType == PacketType.R_CMD) {
+        (bp.field1.toLong, 0, Seq(bp.field2))
       } else {
-        (bp.field2.toLong, bp.data.length - 1, bp.data, 8)
+        (bp.field2.toLong, bp.data.length - 1, bp.data)
       }
 
       val mem = nocMem(bp.dest)
       val rsp = if (bp.write) {
         for (i <- 0 to len) {
-          mem.writeBigInt(addrBase + i * 4, data(i), width)
+          mem.writeBigInt(addrBase + i * 8, data(i), width = 8)
         }
         NocRsp(Seq(), bp.id, bp.write)
       } else {
         val data = (0 to len).map{i =>
-          mem.readBigInt(addrBase + i * 4, length = width)
+          mem.readBigInt(addrBase + i * 8, length = 8)
         }
         NocRsp(data, bp.id, bp.write)
       }
@@ -111,11 +113,13 @@ class BpManagerAgent(dut:BpManager) {
     dut.clockDomain.waitSamplingWhere(dut.io.free.toBoolean)
   }
 
-  def assertMainMem(addrBase:Long, data:Seq[BigInt]): Unit ={
-    for((dTruth, i) <- data.zipWithIndex){
-      val addr = addrBase + i*8
-      val d = mainMem.memory.readBigInt(addr, length = 8)
-      assert(d==dTruth, s"${d.toString(16)} ${dTruth.toString(16)} at ${addr.toHexString}")
+  def assertMainMem(afs:Seq[AccessInfo]): Unit ={
+    for(af <- afs){
+      for((dTruth, i) <- af.data.zipWithIndex){
+        val addr = af.mAddr + i * 8
+        val d = mainMem.memory.readBigInt(addr, length = 8)
+        assert(d == dTruth, s"${d.toString(16)} ${dTruth.toString(16)} at ${addr.toHexString}")
+      }
     }
   }
 }
@@ -135,24 +139,23 @@ class BpManagerTest extends AnyFunSuite {
       val (n, m) = (6, 20)
       val agent = initDut(dut)
       val mAddrBase = 0xFF0000L
-      val dataQueue = mutable.Queue[BigInt]()
-      for(dest <- 0 until n){
-        for(i <- 0 until m){
-          val addr = i * 4
-          val data = (BigInt(dest)<<28) | addr
-          dataQueue.enqueue(data)
-          agent.regWrite(dest, addr, data)
-        }
+      val accessInfo = Seq.tabulate(n, m){(dest, i) =>
+        val addr = i * 8
+        val data = (BigInt(dest) << 28) | addr
+        val mAddr = mAddrBase + addr + dest * m * 8
+        AccessInfo(dest = dest, addr = addr, mAddr = mAddr, data = Seq(data))
+      }.flatten
+
+      accessInfo.foreach{af =>
+        agent.regWrite(af.dest, af.addr, af.data.head)
       }
-      for (dest <- 0 until n) {
-        for (i <- 0 until m) {
-          val addr = i * 4
-          val mAddr = mAddrBase + addr*2 + dest * m * 8
-          agent.regRead(dest, addr, mAddr)
-        }
+
+      accessInfo.foreach { af =>
+        agent.regRead(af.dest, af.addr, mAddr = af.mAddr)
       }
+
       agent.waitFree()
-      agent.assertMainMem(mAddrBase, dataQueue)
+      agent.assertMainMem(accessInfo)
     }
   }
 
