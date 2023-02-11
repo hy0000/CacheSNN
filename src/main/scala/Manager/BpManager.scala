@@ -9,8 +9,18 @@ import spinal.lib.bus.amba4.axi._
 import spinal.lib.fsm._
 
 case class BpCmd() extends Bundle {
-  val head = Bits(64 bits)
+  val useRegCmd = Bool()
+  val write = Bool()
+  val dest = UInt(4 bits)
+  val field1 = UInt(8 bits)
+  val field2 = Bits(32 bits)
   val mAddr = UInt(32 bits)
+
+  def toNocHead(id: UInt): Bits = {
+    require(id.getWidth == 4)
+    val packetType = useRegCmd ? PacketType.R_CMD | PacketType.D_CMD
+    dest ## B(0, 12 bits) ## packetType.asBits ## write ## field1 ## id ## field2
+  }
 }
 
 class BpManager extends Component {
@@ -47,14 +57,11 @@ class BpManager extends Component {
 
     val cmd = cmdBuffer.readSync(cmdProcessPtr(3 downto 0))
     val cmdValid = cmdProcessPtr=/=cmdIssuePtr
-    val bph = BasePacketHead(cmd.head)
-    val isDataCmdWrite = bph.write && bph.packetType===PacketType.D_CMD
+    val isDataCmdWrite = cmd.write && !cmd.useRegCmd
 
     nocHead.whenIsActive{
       when(cmdValid){
-        io.localSend.flit := cmd.head
-        io.localSend.flit(35 downto 32).removeAssignments()
-        io.localSend.flit(35 downto 32) := cmdIssuePtr.value.asBits.resized
+        io.localSend.flit := cmd.toNocHead(id = cmdIssuePtr(3 downto 0))
         io.localSend.last := !isDataCmdWrite
         when(io.localSend.ready){
           when(isDataCmdWrite) {
@@ -69,7 +76,7 @@ class BpManager extends Component {
     axiReadCmd.whenIsActive{
       io.axi.readCmd.valid := True
       io.axi.readCmd.addr := cmd.mAddr
-      io.axi.readCmd.len := bph.field1.asUInt
+      io.axi.readCmd.len := cmd.field1
       when(io.axi.readCmd.ready){
         goto(axiReadData)
       }
@@ -102,7 +109,6 @@ class BpManager extends Component {
       enable = bufferRead || bufferWrite,
       write = bufferWrite
     )
-    val bph = BasePacketHead(cmd.head)
 
     idle.whenIsActive {
       when(io.readRsp.valid){
@@ -119,11 +125,7 @@ class BpManager extends Component {
     axiWriteCmd.whenIsActive {
       io.axi.writeCmd.valid := True
       io.axi.writeCmd.addr := cmd.mAddr
-      when(bph.packetType===PacketType.R_RSP){
-        io.axi.writeCmd.len := 0
-      }otherwise{
-        io.axi.writeCmd.len := bph.field1.asUInt
-      }
+      io.axi.writeCmd.len := cmd.useRegCmd ? cmd.field1 | 0
       when(io.axi.writeCmd.ready){
         goto(axiWriteData)
       }
@@ -134,6 +136,13 @@ class BpManager extends Component {
       io.axi.writeData.data := io.readRsp.data
       io.axi.writeData.last := io.readRsp.last
       when(io.readRsp.lastFire){
+        goto(axiWriteAck)
+      }
+    }
+
+    axiWriteAck.whenIsActive {
+      io.axi.writeRsp.ready := True
+      when(io.axi.writeRsp.valid){
         goto(ptrIncr0)
       }
     }

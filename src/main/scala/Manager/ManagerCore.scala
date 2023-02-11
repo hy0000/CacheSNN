@@ -24,9 +24,21 @@ class ManagerCore extends NocCore {
     val NocField2 = busIf.newReg("noc field 2")
     val NocField3 = busIf.newReg("noc field 3")
 
-    val headH = NocField0.field(Bits(32 bits), WO, "head high")
-    val headL = NocField1.field(Bits(32 bits), WO, "head low")
+    val useRegCmd = NocField0.field(Bool(), WO, "use reg cmd")
+    val write = NocField0.field(Bool(), WO, "write")
+    NocField0.reserved(2 bits)
+    val dest = NocField0.field(UInt(4 bits), WO, "dest")
+    val field1 = NocField0.field(UInt(8 bits), WO, "field1")
+    val field2 = NocField1.field(Bits(32 bits), WO, "field2")
     val mAddr = NocField2.field(UInt(32 bits), WO, "mAddr")
+
+    val bpCmd = BpCmd()
+    bpCmd.useRegCmd := useRegCmd
+    bpCmd.write     := write
+    bpCmd.dest      := dest
+    bpCmd.field1    := field1
+    bpCmd.field2    := field2
+    bpCmd.mAddr     := mAddr
 
     val nocDone = NocField3.field(Bool(), RW, "noc ready")
     val nocValid = NocField3.field(Bool(), WO, "noc valid")
@@ -81,8 +93,7 @@ class ManagerCore extends NocCore {
   bpManager.io.readRsp << interface.readRsp
   bpManager.io.writeRsp << interface.writeRsp
   bpManager.io.cmd.valid := regArea.nocValid && !regArea.nocDone
-  bpManager.io.cmd.head := regArea.headH ## regArea.headL
-  bpManager.io.cmd.mAddr := regArea.mAddr
+  bpManager.io.cmd.payload := regArea.bpCmd
   when(bpManager.io.cmd.fire){
     regArea.nocDone := True
   }
