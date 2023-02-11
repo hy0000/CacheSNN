@@ -1,6 +1,6 @@
 package CacheSNN
 
-import Manager.Manager
+import Manager.ManagerCore
 import Neuron.NeuronCore
 import RingNoC.Ring
 import Synapse.SynapseCore
@@ -29,7 +29,7 @@ class CacheSNN extends Component {
 
   val synapseCores = Seq.fill(4)(new SynapseCore)
   val neuronCore = new NeuronCore
-  val manager = new Manager
+  val manager = new ManagerCore
 
   val ringBus = Ring()
 
