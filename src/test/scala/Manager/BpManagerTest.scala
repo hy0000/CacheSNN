@@ -138,7 +138,7 @@ class BpManagerTest extends AnyFunSuite {
 
   def initDut(dut:BpManager): BpManagerAgent = {
     dut.clockDomain.forkStimulus(2)
-    SimTimeout(100000)
+    SimTimeout(1000000)
     val agent = new BpManagerAgent(dut)
     agent
   }
@@ -174,7 +174,7 @@ class BpManagerTest extends AnyFunSuite {
       val agent = initDut(dut)
       val mAddrBase0 = 0x0L
       val accessInfo = Seq.tabulate(n, m) { (dest, i) =>
-        val len = Random.nextInt(4) + 1
+        val len = Random.nextInt(256)
         val addr = i * 8 * 256 + dest * m * 8 * 256
         val data = (0 to len).map(j =>(BigInt(dest) << 60) + j)
         val mAddr = mAddrBase0 + addr + dest * m * 8 * 256
@@ -197,6 +197,52 @@ class BpManagerTest extends AnyFunSuite {
   }
 
   test("random test") {
+    complied.doSim { dut =>
+      val (n, m) = (6, 14)
+      val agent = initDut(dut)
+      val rAddrBase = 0x0L
+      val dAddrBase = 0x1000L
+      val rmAddrBase = 0x0L
+      val dmAddrBase0 = 0x10000000L
+      val dmAddrBase1 = 0xA0000000L
 
+      val regAccessInfo = Seq.tabulate(n, m) { (dest, i) =>
+        val addr = i * 8 + rAddrBase
+        val data = (BigInt(dest) << 28) | addr
+        val mAddr = rmAddrBase + addr + dest * m * 8
+        AccessInfo(dest = dest, addr = addr, mAddr = mAddr, data = Seq(data))
+      }.flatten
+
+      val dataAccessInfo = Seq.tabulate(n, m) { (dest, i) =>
+        val len = Random.nextInt(128) + 1 // at least 2 to distinguish with regAccessInfo
+        val addr = i * 8 * 256 + dest * m * 8 * 256 + dAddrBase
+        val data = (0 to len).map(j => (BigInt(dest) << 60) + j)
+        val mAddr = dmAddrBase0 + addr + dest * m * 8 * 256
+        AccessInfo(dest = dest, addr = addr, mAddr = mAddr, data = data)
+      }.flatten
+      agent.writeData(dataAccessInfo)
+
+      val accessInfo0 = Random.shuffle(regAccessInfo ++ dataAccessInfo)
+      accessInfo0.foreach { af =>
+        if(af.data.length==1){
+          agent.regWrite(af.dest, af.addr, af.data.head)
+        }else{
+          agent.dataAccess(af.dest, af.addr, af.data.length, write = true, mAddr = af.mAddr)
+        }
+      }
+
+      val dataAccessInfoMoved = dataAccessInfo.map(a => a.copy(mAddr = a.mAddr - dmAddrBase0 + dmAddrBase1))
+      val accessInfo1 = Random.shuffle(regAccessInfo ++ dataAccessInfoMoved)
+      accessInfo1.foreach { af =>
+        if (af.data.length == 1) {
+          agent.regRead(af.dest, af.addr, mAddr = af.mAddr)
+        } else {
+          agent.dataAccess(af.dest, af.addr, af.data.length, write = false, mAddr = af.mAddr)
+        }
+      }
+
+      agent.waitFree()
+      agent.assertMainMem(accessInfo1)
+    }
   }
 }
