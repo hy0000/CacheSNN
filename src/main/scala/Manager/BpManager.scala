@@ -149,9 +149,9 @@ class BpManager extends Component {
       io.axi.writeData.arbitrationFrom(io.readRsp)
       io.axi.writeData.data := io.readRsp.data
       io.axi.writeData.last := io.readRsp.last
-      bufferWrite := True
-      bufferAddr := io.readRsp.id
       when(io.readRsp.lastFire){
+        bufferWrite := True
+        bufferAddr := io.readRsp.id
         goto(axiWriteAck)
       }
     }

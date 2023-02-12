@@ -55,7 +55,7 @@ class BpManagerAgent(dut:BpManager) {
       val (addrBase, len, data) = if (bp.packetType == PacketType.R_CMD) {
         (bp.field1.toLong, 0, Seq(bp.field2))
       } else {
-        (bp.field2.toLong, bp.data.length - 1, bp.data)
+        (bp.field2.toLong, bp.field1.toInt, bp.data)
       }
 
       val mem = nocMem(bp.dest)
@@ -122,6 +122,15 @@ class BpManagerAgent(dut:BpManager) {
       }
     }
   }
+
+  def writeData(afs:Seq[AccessInfo]): Unit ={
+    for (af <- afs) {
+      for ((d, i) <- af.data.zipWithIndex) {
+        val addr = af.mAddr + i * 8
+        mainMem.memory.writeBigInt(addr, data = d, width = 8)
+      }
+    }
+  }
 }
 
 class BpManagerTest extends AnyFunSuite {
@@ -160,7 +169,31 @@ class BpManagerTest extends AnyFunSuite {
   }
 
   test("data wr test") {
+    complied.doSim { dut =>
+      val (n, m) = (6, 30)
+      val agent = initDut(dut)
+      val mAddrBase0 = 0x0L
+      val accessInfo = Seq.tabulate(n, m) { (dest, i) =>
+        val len = Random.nextInt(4) + 1
+        val addr = i * 8 * 256 + dest * m * 8 * 256
+        val data = (0 to len).map(j =>(BigInt(dest) << 60) + j)
+        val mAddr = mAddrBase0 + addr + dest * m * 8 * 256
+        AccessInfo(dest = dest, addr = addr, mAddr = mAddr, data = data)
+      }.flatten
 
+      agent.writeData(accessInfo)
+      accessInfo.foreach { af =>
+        agent.dataAccess(af.dest, af.addr, af.data.length, write = true, mAddr = af.mAddr)
+      }
+
+      val accessInfoMoved = accessInfo.map(a => a.copy(mAddr = a.mAddr + 0x20000000L))
+      accessInfoMoved.foreach { af =>
+        agent.dataAccess(af.dest, af.addr, af.data.length, write = false, mAddr = af.mAddr)
+      }
+
+      agent.waitFree()
+      agent.assertMainMem(accessInfoMoved)
+    }
   }
 
   test("random test") {
