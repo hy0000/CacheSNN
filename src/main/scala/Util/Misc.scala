@@ -35,6 +35,8 @@ object Misc {
     axi.ar.id := id
     axi.aw.size.assignFromBits(Axi4.size.BYTE_8)
     axi.ar.size.assignFromBits(Axi4.size.BYTE_8)
+    axi.aw.burst := Axi4.burst.INCR
+    axi.ar.burst := Axi4.burst.INCR
     axi.aw.cache := 0
     axi.ar.cache := 0
     axi.aw.lock := 0
