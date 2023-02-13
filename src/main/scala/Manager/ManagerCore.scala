@@ -13,12 +13,12 @@ class ManagerCore extends NocCore {
   override val supportAsMemSlave = false
 
   val io = new Bundle {
-    val externalMemory = master(Axi4(CacheSNN.axiMasterConfig))
-    val ctrl = slave(AxiLite4(CacheSNN.axiLiteSlaveConfig))
+    val axi = master(Axi4(CacheSNN.axiMasterConfig))
+    val axiLite = slave(AxiLite4(CacheSNN.axiLiteSlaveConfig))
   }
 
   val regArea = new Area {
-    val busIf = AxiLite4BusInterface(io.ctrl, SizeMapping(0, 256 Byte), "")
+    val busIf = AxiLite4BusInterface(io.axiLite, SizeMapping(0, 256 Byte), "")
     val NocField0 = busIf.newReg("noc field 0")
     val NocField1 = busIf.newReg("noc field 1")
     val NocField2 = busIf.newReg("noc field 2")
@@ -41,7 +41,7 @@ class ManagerCore extends NocCore {
     bpCmd.mAddr     := mAddr
 
     val nocDone = NocField3.field(Bool(), RW, "noc ready")
-    val nocValid = NocField3.field(Bool(), WO, "noc valid")
+    val nocValid = NocField3.field(Bool(), RW, "noc valid")
 
     val NidField = busIf.newReg("nid field")
     val NidDestField = busIf.newReg("nid dest field")
@@ -74,7 +74,7 @@ class ManagerCore extends NocCore {
     for (i <- 0 until 4) {
       val nidBase = PostField1.field(UInt(6 bits), WO, s"post nidBase").setName(s"post_nid_base_$i")
       val valid   = PostField1.field(Bool(), WO, s"post nid valid").setName(s"post_nid_valid_$i")
-      val len     = PostField0.field(UInt(4 bits), WO, s"post spike len")
+      val len     = PostField0.field(UInt(4 bits), RW, s"post spike len")
       postNidMap(i).nidBase := nidBase
       postNidMap(i).valid   := valid
       postNidMap(i).len     := len
@@ -82,9 +82,9 @@ class ManagerCore extends NocCore {
 
     val PreSpikeField = busIf.newReg("preSpike field")
     val preSpikeDone = PreSpikeField.field(Bool(), RW, s"preSpike done")
-    val preSpikeValid = PreSpikeField.field(Bool(), WO, s"preSpike valid")
-    val preSpikeNidBase = PreSpikeField.field(UInt(6 bits), WO, s"preSpike nid base")
-    val preSpikeAddrBase = PreSpikeField.field(UInt(22 bits), WO, s"pre spike addr base")
+    val preSpikeValid = PreSpikeField.field(Bool(), RW, s"preSpike valid")
+    val preSpikeNidBase = PreSpikeField.field(UInt(6 bits), RW, s"preSpike nid base")
+    val preSpikeAddrBase = PreSpikeField.field(UInt(22 bits), RW, s"pre spike addr base")
     busIf.accept(HtmlGenerator("ManagerCoreReg", "ManagerCore"))
   }
 
@@ -116,9 +116,9 @@ class ManagerCore extends NocCore {
   }
 
   val axiCross = Axi4CrossbarFactory()
-  axiCross.addSlave(io.externalMemory, SizeMapping(0, BigInt(1)<<32))
-  axiCross.addConnection(aerManager.io.axi, Seq(io.externalMemory))
-  axiCross.addConnection(bpManager.io.axi, Seq(io.externalMemory))
+  axiCross.addSlave(io.axi, SizeMapping(0, BigInt(1)<<32))
+  axiCross.addConnection(aerManager.io.axi, Seq(io.axi))
+  axiCross.addConnection(bpManager.io.axi, Seq(io.axi))
   axiCross.build()
 
   interface.localSend << StreamArbiterFactory.fragmentLock.roundRobin.on(
