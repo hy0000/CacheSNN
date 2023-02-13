@@ -43,19 +43,8 @@ class ManagerCore extends NocCore {
     val nocDone = NocField3.field(Bool(), RW, "noc ready")
     val nocValid = NocField3.field(Bool(), WO, "noc valid")
 
-    /*
-      nid[15:10]: nidBase
-      nid[9:0]: nidOffset
-      addr = (addrBase + nidOffset) ## 10'B0
-     */
-    case class NidMap() extends Bundle {
-      val free = Bool()
-      val valid = Bool()
-      val nidBase = UInt(6 bits)
-      val len = UInt(8 bits)
-      val addrBase = UInt(22 bits)
-    }
     val NidField = busIf.newReg("nid field")
+    val NidDestField = busIf.newReg("nid dest field")
     val AddrField0 = busIf.newReg("addr field 0")
     val AddrField1 = busIf.newReg("addr field 1")
     val AddrField2 = busIf.newReg("addr field 2")
@@ -64,11 +53,23 @@ class ManagerCore extends NocCore {
     val addrField = Array(AddrField0, AddrField1, AddrField2, AddrField3)
     val nidMap = Vec(NidMap(), 4)
     for (i <- 0 until 4) {
-      nidMap(i).free := NidField.field(Bool(), RW, s"free $i").setName(s"free_$i")
       nidMap(i).valid := NidField.field(Bool(), WO, s"valid $i").setName(s"valid_$i")
       nidMap(i).nidBase := NidField.field(UInt(6 bits), WO,s"nid base $i").setName(s"nid_base_$i")
       nidMap(i).len := addrField(i).field(UInt(8 bits), WO, s"len $i").setName(s"len_$i")
       nidMap(i).addrBase := addrField(i).field(UInt(22 bits), WO, s"addr base $i").setName(s"addr_base_$i")
+      nidMap(i).dest := NidDestField.field(UInt(4 bits), WO, s"nid_dest_$i")
+    }
+
+    val PostAddrField = busIf.newReg("postSpike field")
+    val PostField0 = busIf.newReg("post field 0")
+    val PostField1 = busIf.newReg("post field 1")
+    val postSpikeAddrBase = PostAddrField.field(UInt(32 bits), WO, s"post spike addr base")
+    val nidEpochDone = PostField0.field(Bits(4 bits), RW, s"nid free")
+    val postNidMap = Vec(PostNidMap(), 4)
+    for (i <- 0 until 4) {
+      postNidMap(i).nidBase := PostField1.field(UInt(6 bits), WO, s"post nidBase").setName(s"post_nid_base_$i")
+      postNidMap(i).valid := PostField1.field(Bool(), WO, s"post nid valid").setName(s"post_nid_valid_$i")
+      postNidMap(i).len := PostField0.field(UInt(4 bits), WO, s"post spike len")
     }
 
     val PreSpikeField = busIf.newReg("preSpike field")
@@ -76,18 +77,26 @@ class ManagerCore extends NocCore {
     val preSpikeValid = PreSpikeField.field(Bool(), WO, s"preSpike valid")
     val preSpikeNidBase = PreSpikeField.field(UInt(6 bits), WO, s"preSpike nid base")
     val preSpikeAddrBase = PreSpikeField.field(UInt(22 bits), WO, s"pre spike addr base")
-
     busIf.accept(HtmlGenerator("ManagerCoreReg", "ManagerCore"))
   }
 
   val aerManager = new AerManager
   val bpManager = new BpManager
   aerManager.io.aer <> interface.aer
-  aerManager.io.cmd.valid := regArea.preSpikeValid && !regArea.preSpikeDone
-  aerManager.io.cmd.nidBase := regArea.preSpikeNidBase
-  aerManager.io.cmd.addrBase := regArea.preSpikeAddrBase
-  when(aerManager.io.cmd.fire){
+  aerManager.io.preSpikeCmd.valid := regArea.preSpikeValid && !regArea.preSpikeDone
+  aerManager.io.preSpikeCmd.nidBase := regArea.preSpikeNidBase
+  aerManager.io.preSpikeCmd.addrBase := regArea.preSpikeAddrBase
+  aerManager.io.preSpikeCmd.dest := regArea.dest
+  aerManager.io.nidMap := regArea.nidMap
+  aerManager.io.postAddrBase := regArea.postSpikeAddrBase
+  aerManager.io.postNidMap := regArea.postNidMap
+  when(aerManager.io.preSpikeCmd.fire){
     regArea.preSpikeDone := True
+  }
+  for(i <- 0 until 4){
+    when(aerManager.io.nidEpochDone(i)){
+      regArea.nidEpochDone(i) := True
+    }
   }
 
   bpManager.io.readRsp << interface.readRsp
