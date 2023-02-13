@@ -22,7 +22,7 @@ case class BasePacketSim(dest:Int,
     NocPacket(dest, src, custom, data)
   }
 
-  def toRspPacket(field1:Int = 0, field2:Int = 0, data:Seq[BigInt] = Seq()): BasePacketSim = {
+  def toRspPacket(field1:Int = 0, field2:Long = 0, data:Seq[BigInt] = Seq()): BasePacketSim = {
     val pt = packetType match {
       case R_CMD => R_RSP
       case D_CMD => D_RSP
