@@ -53,11 +53,16 @@ class ManagerCore extends NocCore {
     val addrField = Array(AddrField0, AddrField1, AddrField2, AddrField3)
     val nidMap = Vec(NidMap(), 4)
     for (i <- 0 until 4) {
-      nidMap(i).valid := NidField.field(Bool(), WO, s"valid $i").setName(s"valid_$i")
-      nidMap(i).nidBase := NidField.field(UInt(6 bits), WO,s"nid base $i").setName(s"nid_base_$i")
-      nidMap(i).len := addrField(i).field(UInt(8 bits), WO, s"len $i").setName(s"len_$i")
-      nidMap(i).addrBase := addrField(i).field(UInt(22 bits), WO, s"addr base $i").setName(s"addr_base_$i")
-      nidMap(i).dest := NidDestField.field(UInt(4 bits), WO, s"nid_dest_$i")
+      val valid     = NidField.field(Bool(), WO, s"valid $i").setName(s"valid_$i")
+      val nidBase   = NidField.field(UInt(6 bits), WO,s"nid base $i")
+      val len       = addrField(i).field(UInt(8 bits), WO, s"len $i")
+      val addrBase  = addrField(i).field(UInt(22 bits), WO, s"addr base $i")
+      val dest      = NidDestField.field(UInt(4 bits), WO, s"nid_dest_$i")
+      nidMap(i).valid    := valid
+      nidMap(i).nidBase  := nidBase
+      nidMap(i).len      := len
+      nidMap(i).addrBase := addrBase
+      nidMap(i).dest     := dest
     }
 
     val PostAddrField = busIf.newReg("postSpike field")
@@ -67,9 +72,12 @@ class ManagerCore extends NocCore {
     val nidEpochDone = PostField0.field(Bits(4 bits), RW, s"nid free")
     val postNidMap = Vec(PostNidMap(), 4)
     for (i <- 0 until 4) {
-      postNidMap(i).nidBase := PostField1.field(UInt(6 bits), WO, s"post nidBase").setName(s"post_nid_base_$i")
-      postNidMap(i).valid := PostField1.field(Bool(), WO, s"post nid valid").setName(s"post_nid_valid_$i")
-      postNidMap(i).len := PostField0.field(UInt(4 bits), WO, s"post spike len")
+      val nidBase = PostField1.field(UInt(6 bits), WO, s"post nidBase").setName(s"post_nid_base_$i")
+      val valid   = PostField1.field(Bool(), WO, s"post nid valid").setName(s"post_nid_valid_$i")
+      val len     = PostField0.field(UInt(4 bits), WO, s"post spike len")
+      postNidMap(i).nidBase := nidBase
+      postNidMap(i).valid   := valid
+      postNidMap(i).len     := len
     }
 
     val PreSpikeField = busIf.newReg("preSpike field")
