@@ -26,6 +26,7 @@ case class BpCmd() extends Bundle {
 class BpManager extends Component {
   val io = new Bundle {
     val free = out Bool()
+    val cmdDone = out Bool()
     val cmd = slave(Stream(BpCmd()))
     val localSend = master(NocInterface())
     val readRsp = slave(BaseReadRsp())
@@ -171,6 +172,7 @@ class BpManager extends Component {
 
     ptrIncr1.whenIsActive{
       when(!cmd.valid && !io.free){
+        io.cmdDone := True
         cmdRspPtr.increment()
         goto(ptrIncr0)
       }otherwise{

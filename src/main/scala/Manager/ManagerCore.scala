@@ -40,7 +40,7 @@ class ManagerCore extends NocCore {
     bpCmd.field2    := field2
     bpCmd.mAddr     := mAddr
 
-    val nocDone = NocField3.field(Bool(), RW, "noc ready")
+    val nocSent = NocField3.field(Bool(), RW, "noc ready")
     val nocValid = NocField3.field(Bool(), RW, "noc valid")
 
     val NidField = busIf.newReg("nid field")
@@ -85,6 +85,9 @@ class ManagerCore extends NocCore {
     val preSpikeValid = PreSpikeField.field(Bool(), RW, s"preSpike valid")
     val preSpikeNidBase = PreSpikeField.field(UInt(6 bits), RW, s"preSpike nid base")
     val preSpikeAddrBase = PreSpikeField.field(UInt(22 bits), RW, s"pre spike addr base")
+
+    val DoneCntField = busIf.newReg("preSpike field")
+    val nocDoneCnt = DoneCntField.field(UInt(16 bits), RW, "noc done cnt")
     busIf.accept(HtmlGenerator("ManagerCoreReg", "ManagerCore"))
   }
 
@@ -109,10 +112,13 @@ class ManagerCore extends NocCore {
 
   bpManager.io.readRsp << interface.readRsp
   bpManager.io.writeRsp << interface.writeRsp
-  bpManager.io.cmd.valid := regArea.nocValid && !regArea.nocDone
+  bpManager.io.cmd.valid := regArea.nocValid && !regArea.nocSent
   bpManager.io.cmd.payload := regArea.bpCmd
   when(bpManager.io.cmd.fire){
-    regArea.nocDone := True
+    regArea.nocSent := True
+  }
+  when(bpManager.io.cmdDone){
+    regArea.nocDoneCnt := regArea.nocDoneCnt + 1
   }
 
   val axiCross = Axi4CrossbarFactory()
