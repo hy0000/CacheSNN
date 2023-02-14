@@ -146,7 +146,7 @@ class NocUnPackerTest extends AnyFunSuite {
         val regWriteRspPacket = BasePacketSim(dest = src, src = dest, packetType = PacketType.R_RSP, write = true, id = 1, field1 = 0, field2 = 0)
         val regReadRspPacket = regWriteRspPacket.copy(id = 2, write = false, field2 = 0x666)
         val dataWriteRspPacket = regWriteRspPacket.copy(packetType = PacketType.D_RSP, id = 3)
-        val dataReadRspPacket = dataWriteRspPacket.copy(id = 4, write = false, field1 = 2, data = Seq(6, 6, 6))
+        val dataReadRspPacket = dataWriteRspPacket.copy(id = 4, write = false, field1 = 2, data = Seq(6, 7, 8))
 
         val packets = Seq(
           regWriteRspPacket,

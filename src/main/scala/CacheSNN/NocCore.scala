@@ -233,7 +233,7 @@ class NocUnPacker(supportMemMaster:Boolean, supportMemSlave:Boolean) extends Com
       }
     dataReadRsp
       .whenIsActive{
-        io.readRsp.valid := True
+        io.readRsp.arbitrationFrom(io.nocRec)
         io.readRsp.id := bphReg.id
         io.readRsp.data := io.nocRec.flit
         io.readRsp.last := io.nocRec.last
