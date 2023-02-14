@@ -243,11 +243,13 @@ class SpikeRam extends Component {
   io.readRsp.fragment := ram.readSync(cnt.value, readValid && io.readRsp.ready)
   io.readRsp.last := RegNextWhen(last, io.readRsp.ready)
 
-  reading.riseWhen(io.readStart)
-  reading.fallWhen(cnt.willIncrement && last)
+  reading.setWhen(io.readStart)
   when(io.readRsp.ready && readValid){
-    cnt.increment()
-  }elsewhen !reading {
-    cnt.clear()
+    when(last){
+      reading.clear()
+      cnt.clear()
+    }otherwise{
+      cnt.increment()
+    }
   }
 }

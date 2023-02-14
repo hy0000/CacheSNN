@@ -218,7 +218,7 @@ class SpikeRamTest extends AnyFunSuite {
   val complied = simConfig.compile(new SpikeRam)
 
   test("read test"){
-    complied.doSim{ dut =>
+    complied.doSim(1096100458){ dut =>
       dut.clockDomain.forkStimulus(2)
       SimTimeout(1000)
       StreamReadyRandomizer(dut.io.readRsp, dut.clockDomain)
@@ -250,10 +250,10 @@ class SpikeRamTest extends AnyFunSuite {
         }
       }
 
-      for (_ <- 0 until 4) {
+      for (t <- 0 until 4) {
         for(i <- 0 to len){
           dut.clockDomain.waitSamplingWhere(dut.io.readRsp.valid.toBoolean && dut.io.readRsp.ready.toBoolean)
-          assert(dut.io.readRsp.fragment.toBigInt==spikes(i))
+          assert(dut.io.readRsp.fragment.toBigInt==spikes(i), s"at t$t i$i")
         }
       }
     }
