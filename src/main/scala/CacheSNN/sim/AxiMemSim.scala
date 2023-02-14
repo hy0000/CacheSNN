@@ -20,11 +20,19 @@ class AxiMemSim(axi:Axi4, clockDomain: ClockDomain){
     }
   }
 
+  def write(addr: Long, data: BigInt): Unit = {
+    mem.memory.writeBigInt(addr, data, width = dWidth)
+  }
+
   def read(addrBase: Long, length: Int): Seq[BigInt] ={
     (0 until length).map{ i =>
       val addr = addrBase + i * dWidth
       mem.memory.readBigInt(addr, length = dWidth)
     }
+  }
+
+  def read(addr: Long): BigInt = {
+    mem.memory.readBigInt(addr, length = dWidth)
   }
 
   def assertData(addrBase: Long, data: Seq[BigInt]): Unit ={
