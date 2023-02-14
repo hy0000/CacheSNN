@@ -15,8 +15,7 @@ import scala.collection.mutable
 import scala.util.Random
 
 case class AerManagerAgent(dut:AerManager) {
-  val mainMem = AxiMemorySim(dut.io.axi, dut.clockDomain, AxiMemorySimConfig())
-  mainMem.start()
+  val mainMem = AxiMemSim(dut.io.axi, dut.clockDomain)
   val aerDriver = AerDriver(dut.io.aer, dut.clockDomain)
   val aerPacketRec = Array.fill(16)(mutable.Queue[AerPacketSim]())
   val (_, preSpikeCmdQueue) = StreamDriver.queue(dut.io.preSpikeCmd, dut.clockDomain)
@@ -76,10 +75,8 @@ class AerManagerTest extends AnyFunSuite {
       }
 
       for(s <- preSpike){
-        for(i <- s.spikeRaw.indices){
-          val addr = (s.addrBase<<10) + i*8
-          agent.mainMem.memory.writeBigInt(addr, s.spikeRaw(i), width = 8)
-        }
+        val mAddr = s.addrBase<<10
+        agent.mainMem.write(mAddr, s.spikeRaw)
         agent.preSpikeCmdQueue.enqueue{cmd =>
           cmd.dest #= s.dest
           cmd.nidBase #= s.nidBase
@@ -123,11 +120,8 @@ class AerManagerTest extends AnyFunSuite {
 
       for(i <- 0 until n){
         dut.clockDomain.waitSamplingWhere(dut.io.nidEpochDone(i).toBoolean)
-        for(j <- 0 until 8){
-          val addr = postSpikeBufAddr + i * 8*8 + j * 8
-          val spikeRaw = agent.mainMem.memory.readBigInt(addr, length = 8)
-          assert(spikeRaw == postSpikePacket(i).data(j))
-        }
+        val mAddr = postSpikeBufAddr + i * 8*8
+        agent.mainMem.assertData(mAddr, postSpikePacket(i).data)
       }
     }
   }
@@ -167,11 +161,7 @@ class AerManagerTest extends AnyFunSuite {
       for(wp <- weightWritePacket){
         val nidOff = wp.nid % 1024
         val addrBase = (nidMapSim(wp.src).addrBase + nidOff) << 10
-        for((dTruth, i) <- wp.data.zipWithIndex){
-          val addr = addrBase + i*8
-          val d = agent.mainMem.memory.readBigInt(addr, length = 8)
-          assert(d==dTruth, s"at addr ${addr.toHexString} i$i")
-        }
+        agent.mainMem.assertData(addrBase, wp.data)
       }
     }
   }
@@ -212,10 +202,7 @@ class AerManagerTest extends AnyFunSuite {
       for((dSeq, wp) <- dataSeq.zip(weightFetchPacket)){
         val nidOff = wp.nid % 1024
         val addrBase = (nidMapSim(wp.src).addrBase + nidOff) << 10
-        for((d, i) <- dSeq.zipWithIndex){
-          val addr = addrBase + i * 8
-          agent.mainMem.memory.writeBigInt(addr, d, width = 8)
-        }
+        agent.mainMem.write(addrBase, dSeq)
       }
 
       agent.aerDriver.sendPacket(weightFetchPacket)
@@ -251,10 +238,7 @@ class AerManagerTest extends AnyFunSuite {
         nidBase = preSpikeNid>>10,
         dest = 0
       )
-      for (i <- preSpikeInfo.spikeRaw.indices) {
-        val addr = (preSpikeInfo.addrBase << 10) + i * 8
-        agent.mainMem.memory.writeBigInt(addr, preSpikeInfo.spikeRaw(i), width = 8)
-      }
+      agent.mainMem.write(preSpikeInfo.addrBase<<10, preSpikeInfo.spikeRaw)
 
       // generate post spike
       val postNidMapSim = Seq(PostNidMapSim(nidBase = postSpikeNid>>10, len = 7))
@@ -315,13 +299,10 @@ class AerManagerTest extends AnyFunSuite {
 
       val weightWritePacketRec = agent.aerPacketRec.head.drop(1) // drop pre spike packet
       for ((recP, i) <- weightWritePacketRec.zipWithIndex) {
-        val memData = (0 to nidMapSim.head.len).map{j =>
-          val nidOffset = recP.nid % 1024
-          val addr = ((weightAddrBase + nidOffset) << 10) + j * 8
-          agent.mainMem.memory.readBigInt(addr, length = 8)
-        }
+        val nidOffset = recP.nid % 1024
+        val addr = (weightAddrBase + nidOffset) << 10
+        agent.mainMem.assertData(addr, recP.data)
         assert(recP.nid == weightFetchPacket(i).nid)
-        assert(recP.data == memData)
       }
     }
   }

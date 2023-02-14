@@ -2,11 +2,10 @@ package Manager
 
 import CacheSNN.CacheSnnTest.simConfig
 import CacheSNN.PacketType
-import CacheSNN.sim.BasePacketSim
+import CacheSNN.sim.{AxiMemSim, BasePacketSim}
 import RingNoC.sim._
 import org.scalatest.funsuite.AnyFunSuite
 import spinal.core.sim._
-import spinal.lib.bus.amba4.axi.sim._
 import spinal.lib.bus.amba4.axi.sim.SparseMemory
 import spinal.lib.sim._
 
@@ -16,8 +15,7 @@ import scala.util.Random
 case class AccessInfo(dest:Int, addr:Long, mAddr:Long, data:Seq[BigInt])
 
 class BpManagerAgent(dut:BpManager) {
-  val mainMem = AxiMemorySim(dut.io.axi, dut.clockDomain, AxiMemorySimConfig())
-  mainMem.start()
+  val mainMem = AxiMemSim(dut.io.axi, dut.clockDomain)
   val nocMem = Array.fill(16)(SparseMemory())
   val (readRspDriver, readRspQueue) = StreamDriver.queue(dut.io.readRsp, dut.clockDomain)
   val (writeRspDriver, writeRspQueue) = StreamDriver.queue(dut.io.writeRsp, dut.clockDomain)
@@ -115,20 +113,13 @@ class BpManagerAgent(dut:BpManager) {
 
   def assertMainMem(afs:Seq[AccessInfo]): Unit ={
     for(af <- afs){
-      for((dTruth, i) <- af.data.zipWithIndex){
-        val addr = af.mAddr + i * 8
-        val d = mainMem.memory.readBigInt(addr, length = 8)
-        assert(d == dTruth, s"${d.toString(16)} ${dTruth.toString(16)} at ${addr.toHexString}")
-      }
+      mainMem.assertData(af.mAddr, af.data)
     }
   }
 
   def writeData(afs:Seq[AccessInfo]): Unit ={
     for (af <- afs) {
-      for ((d, i) <- af.data.zipWithIndex) {
-        val addr = af.mAddr + i * 8
-        mainMem.memory.writeBigInt(addr, data = d, width = 8)
-      }
+      mainMem.write(af.mAddr, af.data)
     }
   }
 }
