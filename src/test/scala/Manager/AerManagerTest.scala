@@ -3,6 +3,7 @@ package Manager
 import CacheSNN.CacheSnnTest.simConfig
 import CacheSNN.sim._
 import CacheSNN.AER
+import Manager.sim.{NidMapSim, PostNidMapSim}
 import RingNoC.sim._
 import Util.sim.NumberTool._
 import org.scalatest.funsuite.AnyFunSuite
@@ -12,13 +13,6 @@ import spinal.lib.sim._
 
 import scala.collection.mutable
 import scala.util.Random
-
-case class NidMapSim(nidBase: Int,
-                     len: Int,
-                     addrBase: Int,
-                     dest: Int)
-case class PostNidMapSim(nidBase: Int,
-                         len: Int)
 
 case class AerManagerAgent(dut:AerManager) {
   val mainMem = AxiMemorySim(dut.io.axi, dut.clockDomain, AxiMemorySimConfig())
@@ -241,16 +235,16 @@ class AerManagerTest extends AnyFunSuite {
   // 2. weight access
   // 3. send post spike after weight done
   test("mix test") {
-    complied.doSim { dut =>
+    complied.doSim(1544057836) { dut =>
       val agent = initDut(dut)
-      val postSpikeAddrBase = 0xE00
+      val postSpikeAddrBase = 0xE000
       val weightAddrBase = 0x0
       val preSpikeAddrBase = 0x100
       val preSpikeNid = 1024
       val postSpikeNid = 1024 + 512
 
       // generate pre spike
-      val preSpike = Seq.fill(1024)(Random.nextInt(1))
+      val preSpike = Seq.fill(1024)(Random.nextInt(2))
       val preSpikeInfo = PreSpikeInfo(
         spikeRaw = vToRawV(preSpike, width = 1, n = 64),
         addrBase = preSpikeAddrBase,
@@ -264,7 +258,7 @@ class AerManagerTest extends AnyFunSuite {
 
       // generate post spike
       val postNidMapSim = Seq(PostNidMapSim(nidBase = postSpikeNid>>10, len = 7))
-      val postSpike = Seq.fill(512)(Random.nextInt(1))
+      val postSpike = Seq.fill(512)(Random.nextInt(2))
       val postSpikePacket = AerPacketSim(
         dest = 3, src = 0, id = 0,
         eventType = AER.TYPE.POST_SPIKE,
