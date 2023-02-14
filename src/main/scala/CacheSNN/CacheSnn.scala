@@ -23,8 +23,8 @@ object CacheSNN {
 
 class CacheSNN extends Component {
   val io = new Bundle {
-    val externalMemory = master(Axi4(CacheSNN.axiMasterConfig))
-    val ctrl = slave(AxiLite4(CacheSNN.axiLiteSlaveConfig))
+    val axi = master(Axi4(CacheSNN.axiMasterConfig))
+    val axiLite = slave(AxiLite4(CacheSNN.axiLiteSlaveConfig))
   }
 
   val synapseCores = Seq.fill(4)(new SynapseCore)
@@ -38,8 +38,8 @@ class CacheSNN extends Component {
   ringBus.addNode(neuronCore.noc, 2)
   ringBus.addNode(manager.noc, 3)
 
-  manager.io.ctrl <> io.ctrl
-  manager.io.externalMemory <> io.externalMemory
+  manager.io.axiLite <> io.axiLite
+  manager.io.axi <> io.axi
 }
 
 object MySpinalConfig extends SpinalConfig(
