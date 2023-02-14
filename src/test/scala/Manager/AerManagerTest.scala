@@ -1,14 +1,13 @@
 package Manager
 
+import CacheSNN.AER
 import CacheSNN.CacheSnnTest.simConfig
 import CacheSNN.sim._
-import CacheSNN.AER
 import Manager.sim.{NidMapSim, PostNidMapSim}
 import RingNoC.sim._
 import Util.sim.NumberTool._
 import org.scalatest.funsuite.AnyFunSuite
 import spinal.core.sim._
-import spinal.lib.bus.amba4.axi.sim._
 import spinal.lib.sim._
 
 import scala.collection.mutable
@@ -65,9 +64,8 @@ class AerManagerTest extends AnyFunSuite {
       val agent = initDut(dut)
       val n = 7
       val preSpike = (0 until n).map{i =>
-        val spike = Seq.fill(1024)(Random.nextInt(1))
         PreSpikeInfo(
-          spikeRaw = vToRawV(spike, width = 1, n = 64),
+          spikeRaw = SpikeFun.randomPreSpikeRaw(1024),
           addrBase = 0xF00 + i,
           nidBase = 0x10 + i,
           dest = i
@@ -106,12 +104,11 @@ class AerManagerTest extends AnyFunSuite {
         )
       }
       val postSpikePacket = (0 until n).map{src =>
-        val spike = Seq.fill(512)(Random.nextInt(1))
         AerPacketSim(
           dest = 3, src = src, id = 0,
           eventType = AER.TYPE.POST_SPIKE,
           nid = postNidMapSim(src).nidBase<<10,
-          data = vToRawV(spike, width = 1, n = 64)
+          data = SpikeFun.randomPostSpikeRaw(512)
         )
       }
 
