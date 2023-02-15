@@ -1,7 +1,6 @@
-package Util
+package Util.sim
 
 import scala.util.Random
-import sim.NumberTool._
 
 class SnnModel(preLen:Int, postLen:Int) {
   val weight = Array.tabulate(preLen, postLen){

@@ -5,8 +5,7 @@ import CacheSNN.CacheSnnTest._
 import CacheSNN.sim._
 import RingNoC.NocInterfaceLocal
 import Synapse.SynapseCore.{AddrMapping, RegAddr, RegConfig, maxPreSpike}
-import Util.SnnModel
-import Util.sim.NumberTool
+import Util.sim.{NumberTool, SnnModel}
 import org.scalatest.funsuite.AnyFunSuite
 import spinal.core._
 import spinal.core.sim._
