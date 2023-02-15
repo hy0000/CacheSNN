@@ -3,6 +3,7 @@ package Util.sim
 import scala.util.Random
 
 class SnnModel(preLen:Int, postLen:Int) {
+  var learning = false
   val weight = Array.tabulate(preLen, postLen){
     (_, _) => 1
   }
@@ -34,6 +35,17 @@ class SnnModel(preLen:Int, postLen:Int) {
         }
       }
     }
+  }
+
+  def spikeFire(threshold: Int): Array[Int] ={
+    val spike = Array.fill(postLen)(0)
+    for(i <- current.indices){
+      if(current(i) >= threshold){
+        spike(i) = 1
+        current(i) = 0
+      }
+    }
+    spike
   }
 
   def spikeUpdate(preSpike:Array[Array[Int]], postSpike:Array[Array[Int]]): Unit = {
