@@ -194,7 +194,11 @@ class NocUnPacker(supportMemMaster:Boolean, supportMemSlave:Boolean) extends Com
         io.aer.head.valid := True
         io.aer.head.assignFromAerCustomField(bphReg.field2)
         when(io.aer.head.ready){
-          goto(sendBody)
+          when(io.aer.head.eventType===AER.TYPE.W_FETCH){
+            exitFsm()
+          }otherwise{
+            goto(sendBody)
+          }
         }
       }
     sendBody
