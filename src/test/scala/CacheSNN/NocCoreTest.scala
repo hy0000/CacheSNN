@@ -184,7 +184,7 @@ class NocUnPackerTest extends AnyFunSuite {
       val preSpikePacket = AerPacketSim(dest, src, id=1, AER.TYPE.PRE_SPIKE, nid = 0x666, randData)
       val postSpikePacket = AerPacketSim(dest, src, id=2, AER.TYPE.POST_SPIKE, nid = 0x777, randData)
       val currentPacket = AerPacketSim(dest, src, id=3, AER.TYPE.CURRENT, nid = 0x888, randData)
-      val weightFetchPacket = AerPacketSim(dest, src, id=3, AER.TYPE.W_FETCH, nid = 0x999, randData)
+      val weightFetchPacket = AerPacketSim(dest, src, id=3, AER.TYPE.W_FETCH, nid = 0x999, Seq())
       val weightWritePacket = AerPacketSim(dest, src, id=3, AER.TYPE.W_WRITE, nid = 0x1010, randData)
 
       val packets = Seq(
