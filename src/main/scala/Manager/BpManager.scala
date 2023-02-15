@@ -38,35 +38,42 @@ class BpManager extends Component {
   val cmdIssuePtr = Counter(5 bits, io.cmd.fire)
   val cmdRspPtr = Counter(5 bits)
   val cmdProcessPtr = Counter(5 bits)
+  val inProcessRead = False
+  val cmdForProcess = cmdBuffer.readWriteSync(
+    address = inProcessRead ? cmdProcessPtr(3 downto 0) | cmdIssuePtr(3 downto 0),
+    data = io.cmd.asFlow,
+    enable = inProcessRead | io.cmd.fire,
+    write = !inProcessRead
+  )
+
+  val ptrWrapped = cmdIssuePtr.msb ^ cmdRspPtr.msb
+  io.cmd.ready := !(ptrWrapped && cmdIssuePtr(3 downto 0) === cmdRspPtr(3 downto 0)) && !inProcessRead
 
   io.free := cmdRspPtr===cmdIssuePtr
-
-  val cmdIssueArea = new Area {
-    val wrapped = cmdIssuePtr.msb ^ cmdRspPtr.msb
-    io.cmd.ready := !(wrapped && cmdIssuePtr(3 downto 0)===cmdRspPtr(3 downto 0))
-    cmdBuffer.write(
-      address = cmdIssuePtr.value.resized,
-      data = io.cmd.asFlow,
-      enable = io.cmd.fire
-    )
-  }
 
   Misc.setAxiMasterDefault(io.axi, id = 0)
   Misc.clearIO(io)
 
   val cmdProcessFsm = new StateMachine {
     val idle = makeInstantEntry()
+    val bufCmd = new State
     val nocHead = new State
     val axiReadCmd, axiReadData = new State
     val ptrIncr = new State
 
-    val cmd = cmdBuffer.readSync(cmdProcessPtr(3 downto 0))
+    val cmd = Reg(BpCmd())
     val isDataCmdWrite = cmd.write && !cmd.useRegCmd
 
     idle.whenIsActive{
       when(cmdProcessPtr=/=cmdIssuePtr){
-        goto(nocHead)
+        inProcessRead := True
+        goto(bufCmd)
       }
+    }
+
+    bufCmd.whenIsActive {
+      cmd := cmdForProcess
+      goto(nocHead)
     }
 
     nocHead.whenIsActive{
