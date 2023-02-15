@@ -6,8 +6,8 @@ import scala.util.Random
 
 object SpikeFun {
 
-  def randomSpike(n: Int): Array[Int] ={
-    Array.fill(n)(Random.nextInt(2))
+  def randomSpike(n: Int, fireRate:Int = 2): Array[Int] ={
+    Array.fill(n)(Random.nextInt(10)<fireRate).map(booleanToInt)
   }
 
   def randomPreSpikeRaw(n:Int): Seq[BigInt] ={
