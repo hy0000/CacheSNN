@@ -28,6 +28,10 @@ class BasePacketAgent(noc:NocInterfaceLocal, clockDomain: ClockDomain) {
     driver.sendPacket(aerPacketSim)
   }
 
+  def sendAer(aerPacketSim: Seq[AerPacketSim]): Unit ={
+    aerPacketSim.foreach(sendAer)
+  }
+
   def regRead(addr: Int): Long = {
     val bp = BasePacketSim.regRead(dest = dest, src = src, id = 0, addr = addr)
     driver.sendPacket(bp)
