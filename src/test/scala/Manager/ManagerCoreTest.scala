@@ -1,11 +1,10 @@
 package Manager
 
 import CacheSNN.CacheSnnTest.simConfig
-import CacheSNN.{AER, PacketType}
 import CacheSNN.sim._
+import CacheSNN.{AER, PacketType}
 import Manager.sim._
 import RingNoC.NocInterfaceLocal
-import Util.sim.NumberTool._
 import org.scalatest.funsuite.AnyFunSuite
 import spinal.core._
 import spinal.core.sim._
@@ -57,10 +56,6 @@ case class ManagerCoreAgent(dut: ManagerCore)
 
   val mainMem = AxiMemSim(dut.io.axi, dut.clockDomain)
   val nocAgent = ManagerCoreNocAgent(dut.noc, dut.clockDomain)
-
-  def sendPreSpike(spikeRaw: Seq[BigInt], nid:Int, dest: Int, mAddr: Long): Unit = {
-
-  }
 }
 
 class ManagerCoreTest extends AnyFunSuite {
