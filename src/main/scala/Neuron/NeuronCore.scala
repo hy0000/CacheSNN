@@ -228,7 +228,7 @@ class NeuronCompute extends Component {
     val spike = B(0, 4 bits)
     for(i <- 0 until 4){
       spike(i) := CURRENT(i*16, 16 bits).asSInt >= io.threadHold
-      when(!spike(i) && io.fire){
+      when(spike(i) && io.fire){
         currentFired(i*16, 16 bits) := 0
       }otherwise{
         currentFired(i*16, 16 bits) := CURRENT(i*16, 16 bits)

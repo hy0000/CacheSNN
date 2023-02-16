@@ -179,7 +179,7 @@ class NeuronComputeTest extends AnyFunSuite {
       val currentSum = current.transpose.map(_.sum)
       val threadHold = currentSum.sum / currentSum.length
       val spikes = currentSum.map(_ >= threadHold).map(booleanToInt)
-      val currentSumFired = currentSum.zip(spikes).map(z => z._1 * z._2)
+      val currentSumFired = currentSum.zip(spikes).map(z => if(z._2==1) 0 else z._1)
 
       dut.io.threadHold #= threadHold
       dut.io.current.valid #= false
