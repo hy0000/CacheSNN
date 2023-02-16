@@ -29,13 +29,11 @@ class ManagerCoreCtrl(axiLite: AxiLite4, clockDomain: ClockDomain) extends {
     val AddrField = Seq(0x18, 0x1C, 0x20, 0x24)
 
     val PostAddrField = 0x28
-    val PostDoneField = 0x2C
-    val PostField0 = 0x30
-    val PostField1 = 0x34
+    val PostField = Seq(0x2C, 0x30, 0x34, 0x38)
 
-    val PreSpikeField = 0x38
+    val PreSpikeField = 0x3C
 
-    val DoneCntField = 0x3C
+    val DoneCntField = 0x40
 
     val nocField3Valid = 0x2
     val nocField3Done = 0x3
@@ -69,9 +67,11 @@ class ManagerCoreCtrl(axiLite: AxiLite4, clockDomain: ClockDomain) extends {
   }
 
   def waitEpochDone(id:Int): Unit ={
-    while (((ctrl.read(PostDoneField)>>id) & 0x1) != 1) {
+    while (((ctrl.read(PostField(id))>>11) & 0x1) != 1) {
       clockDomain.waitSampling(200)
     }
+    val v = ctrl.read(PostField(id))
+    ctrl.write(PostField(id), v&((1<<11)-1))
   }
 
   def setNidMap(nidMap: Seq[NidMapSim]): Unit = {
@@ -90,13 +90,11 @@ class ManagerCoreCtrl(axiLite: AxiLite4, clockDomain: ClockDomain) extends {
   }
 
   def setPostNidMap(nidMap: Seq[PostNidMapSim], postAddr: Long): Unit = {
-    var reg0, reg1 = 0L
     for((m, i) <- nidMap.zipWithIndex){
-      reg0 |= m.len << (i*8)
-      reg1 |= (m.nidBase | (1<<6)) << (i*7)
+      var reg = 0L
+      reg |= (m.len << 7) | (1<<6) | m.nidBase
+      ctrl.write(PostField(i), reg)
     }
-    ctrl.write(PostField0, reg0)
-    ctrl.write(PostField1, reg1)
     ctrl.write(PostAddrField, postAddr)
   }
 
