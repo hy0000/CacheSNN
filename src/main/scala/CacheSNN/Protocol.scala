@@ -53,7 +53,7 @@ object AER {
     val W_FETCH = newElement("weight_fetch")
     val W_WRITE = newElement("weight_write")
     val PRE_SPIKE = newElement("pre_spike")
-    val POST_SPIKE = newElement("pre_spike")
+    val POST_SPIKE = newElement("post_spike")
     val CURRENT = newElement("current")
 
     defaultEncoding = SpinalEnumEncoding("staticEncoding")(
