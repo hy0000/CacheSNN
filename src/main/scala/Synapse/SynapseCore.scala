@@ -69,6 +69,7 @@ object SynapseCore {
     val field0 = 0x4
     val field1 = 0x8
     val field2 = 0xC
+    val field3 = 0x10
   }
 
   object RegConfig {
@@ -110,6 +111,7 @@ case class SynapseCsr() extends Bundle {
   val refractory = UInt(CacheConfig.tagTimestampWidth bits)
   val flush = Bool()
   val postNidBase = UInt(AER.nidWidth bits)
+  val preNidBase = UInt(AER.nidWidth bits)
 }
 
 class Spike extends Bundle {
@@ -184,6 +186,7 @@ class SynapseCore extends NocCore {
     val FIELD0  = busIf.newReg("field 0")
     val FIELD1  = busIf.newReg("field 1")
     val FIELD2  = busIf.newReg("field 2")
+    val FIELD3  = busIf.newReg("field 3")
 
     FIELD_R.reserved(16 bits)
     val free = FIELD_R.field(Bool, RO, "free")
@@ -196,6 +199,7 @@ class SynapseCore extends NocCore {
     val flush      = FIELD2.field(Bool(), WO, "flush")
     val learning   = FIELD2.field(Bool, WO, "learning")
     val refractory = FIELD2.field(UInt(CacheConfig.tagTimestampWidth bits), WO, "refractory")
+    val preNidBase = FIELD3.field(UInt(16 bits), WO, "preNidBase")
 
     csr.postNidBase := postNidBase
     csr.preLen := preLen
@@ -203,6 +207,7 @@ class SynapseCore extends NocCore {
     csr.flush := flush
     csr.learning := learning
     csr.refractory := refractory
+    csr.preNidBase := preNidBase
     busIf.accept(HtmlGenerator("regIf", "synapseCore"))
   }
 

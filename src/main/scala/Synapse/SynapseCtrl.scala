@@ -40,6 +40,7 @@ class SynapseCtrl extends Component {
 
   spikeUpdater.io.preLen := io.csr.preLen
   spikeUpdater.io.postLen := io.csr.len
+  spikeDecoder.io.nidBase := io.csr.preNidBase
 
   Misc.clearIO(io)
   Misc.idleIo(spikeManager.io, spikeDecoder.io, spikeUpdater.io)
