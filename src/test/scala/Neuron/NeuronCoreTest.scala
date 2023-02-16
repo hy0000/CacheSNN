@@ -5,6 +5,7 @@ import CacheSNN.CacheSnnTest._
 import CacheSNN.sim.{AerPacketSim, BasePacketAgent, BasePacketSim}
 import Neuron.sim.NeuronCoreConfigSim
 import RingNoC.NocInterfaceLocal
+import Util.sim.MemReadWriteMemSlave
 import Util.sim.NumberTool._
 import org.scalatest.funsuite.AnyFunSuite
 import spinal.core._
@@ -164,17 +165,20 @@ class NeuronComputeTest extends AnyFunSuite {
     complied.doSim{ dut =>
       dut.clockDomain.forkStimulus(2)
       SimTimeout(10000)
+      val ram = new MemReadWriteMemSlave(dut.io.cRam, dut.clockDomain)
       val len = 512
       val accTimes = Random.nextInt(4)
-      val threadHold = 1<<16 / 8
       val current = Array.tabulate(accTimes+1, len){
         (_, _) => randomInt16 / 8
       }
-      dut.io.threadHold #= threadHold
-      dut.io.current.valid #= false
 
       val currentSum = current.transpose.map(_.sum)
+      val threadHold = currentSum.sum / currentSum.length
       val spikes = currentSum.map(_ >= threadHold).map(booleanToInt)
+      val currentSumFired = currentSum.zip(spikes).map(z => z._1 * z._2)
+
+      dut.io.threadHold #= threadHold
+      dut.io.current.valid #= false
 
       // thread for assert spike
       val spikeMonitor = fork {
@@ -188,7 +192,6 @@ class NeuronComputeTest extends AnyFunSuite {
 
       // input
       for(t <- 0 to accTimes){
-        dut.io.acc #= t!=0
         dut.io.fire #= t==accTimes
         dut.io.current.valid #= true
         for(i <- 0 until len / 4){
@@ -203,10 +206,10 @@ class NeuronComputeTest extends AnyFunSuite {
       // assert current sum
       dut.clockDomain.waitSampling(4)
       for(i <- 0 until len / 4){
-        val currentRead = getBigInt(dut.currentMem, i)
+        val currentRead = ram.mem(i)
         val currentV = rawToV(currentRead, 16, 4)
         for(j <- 0 until 4){
-          assert(currentV(j)==currentSum(i*4 + j))
+          assert(currentV(j)==currentSumFired(i*4 + j), s"at $i")
         }
       }
       spikeMonitor.join()

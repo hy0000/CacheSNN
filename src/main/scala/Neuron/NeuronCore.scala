@@ -1,13 +1,15 @@
 package Neuron
 
 import CacheSNN.{AER, NocCore, PacketType}
-import Util.{MemWriteCmd, Misc}
+import Util.{MemReadWrite, MemWriteCmd, Misc, PipelinedMemoryBusRam}
+import Synapse.{Buffer, SynapseCore}
 import spinal.core._
 import spinal.core.sim._
 import spinal.lib._
 import spinal.lib.bus.misc.SizeMapping
 import spinal.lib.bus.regif.AccessType.WO
 import spinal.lib.bus.regif.{Apb3BusInterface, HtmlGenerator}
+import spinal.lib.bus.simple.PipelinedMemoryBusConfig
 import spinal.lib.fsm._
 import spinal.lib.pipeline.Connection.M2S
 import spinal.lib.pipeline._
@@ -65,10 +67,19 @@ class NeuronCore extends NocCore {
   val accTimes = Vec(Reg(UInt(2 bits)) init 0, 4)
   val sendCnt = Counter(5)
 
+  val currentRamSize = 4 KiB
+  val dataBus = interface.dataBus.toPipeLineMemoryBus
+  val currentRam = new PipelinedMemoryBusRam(dataWidth = 64, currentRamSize)
+  currentRam.io.bus.cmd.arbitrationFrom(dataBus.cmd)
+  currentRam.io.bus.cmd.address := dataBus.cmd.address.resized
+  currentRam.io.bus.cmd.assignUnassignedByName(dataBus.cmd)
+  currentRam.io.bus.rsp >> dataBus.rsp
+  currentRam.io.mem.write.setIdle()
+  currentRam.io.mem.read.cmd.setIdle()
+
   val neuron = new NeuronCompute
   val spikeRam = new SpikeRam
   neuron.io.maskSpike >> spikeRam.io.write
-  neuron.io.acc := True
   Misc.idleIo(neuron.io)
   Misc.idleIo(spikeRam.io)
   idleInterface()
@@ -107,7 +118,6 @@ class NeuronCore extends NocCore {
 
     compute.whenIsActive {
       neuron.io.fire := accTimes(mapInfo.addr) === mapInfo.acc
-      neuron.io.acc := accTimes(mapInfo.addr) =/= 0
       neuron.io.current << interface.aer.body.toFlow
       neuron.io.threadHold := mapInfo.threshold
       when(neuron.io.current.lastFire){
@@ -118,7 +128,6 @@ class NeuronCore extends NocCore {
     waitComputeDone
       .whenIsActive{
         neuron.io.fire := accTimes(mapInfo.addr) === mapInfo.acc
-        neuron.io.acc := accTimes(mapInfo.addr) =/= 0
         neuron.io.threadHold := mapInfo.threshold
       }
       .whenCompleted{
@@ -169,17 +178,19 @@ class NeuronCore extends NocCore {
 class NeuronCompute extends Component {
   val io = new Bundle {
     val threadHold = in SInt(16 bits)
-    val acc, fire = in Bool()
+    val fire = in Bool()
     val current = slave(Flow(Fragment(Bits(64 bits))))
     val maskSpike = master(Flow(MemWriteCmd(64, log2Up(512 / 64))))
+    val cRam = master(MemReadWrite(dataWidth = 64, addrWidth = 9))
+    val cRamAddrBase = in UInt(2 bits)
   }
 
   val N = 512 / 4
-  val currentMem = Mem(Bits(64 bits), N) simPublic()
   val addrCnt = Counter(N, io.current.valid)
   when(io.current.lastFire){
     addrCnt.clear()
   }
+  val spikesReg = Reg(Bits(64 bits))
 
   def vAdd(a: Vec[SInt], b: Vec[SInt]): Bits = {
     a.zip(b).map(z => z._1 +| z._2)
@@ -192,35 +203,52 @@ class NeuronCompute extends Component {
   }
 
   implicit val pip = new Pipeline
-  val s0 = new Stage()
+  val ADDR = Stageable(cloneOf(io.cRam.write.address))
+  val CURRENT = Stageable(Bits(64 bits))
+  val SPIKE_VALID = Stageable(Bool())
+
+  val s0 = new Stage(){
+    valid := io.current.valid
+    ADDR := io.cRamAddrBase @@ addrCnt.value
+    CURRENT := io.current.fragment
+    io.cRam.read.cmd.valid := valid
+    io.cRam.read.cmd.payload := ADDR
+  }
+
   val s1 = new Stage(connection = M2S())
-  val s2 = new Stage(connection = M2S())
-  val s3 = new Stage(connection = M2S())
 
-  s0.valid := io.current.valid
-  val ADDR = s0.insert(addrCnt.value)
-  val CURRENT = s0.insert(io.current.fragment)
-
-  val currentOld = currentMem.readSync(s0(ADDR), enable = io.acc)
-  val currentNew = vAdd(currentOld, s1(CURRENT))
-  when(!io.acc){
-    currentNew := s1(CURRENT)
-  }
-  s1.overloaded(CURRENT) := currentNew
-
-  currentMem.write(s2(ADDR), s2(CURRENT), s2.valid)
-  val spikes = s2(CURRENT).subdivideIn(16 bits).map{current =>
-    current.asSInt >= io.threadHold
+  val s2 = new Stage(connection = M2S()){
+    val currentOld = io.cRam.read.rsp
+    overloaded(CURRENT) := vAdd(currentOld, CURRENT.asBits)
   }
 
-  val spikesReg = Reg(Bits(64 bits))
-  when(s2.valid && io.fire){
-    spikesReg := spikes.asBits() ## (spikesReg >> 4)
+  val s3 = new Stage(connection = M2S()){
+    val currentFired = B(0, 64 bits)
+    val spike = B(0, 4 bits)
+    for(i <- 0 until 4){
+      spike(i) := CURRENT(i*16, 16 bits).asSInt >= io.threadHold
+      when(!spike(i) && io.fire){
+        currentFired(i*16, 16 bits) := 0
+      }otherwise{
+        currentFired(i*16, 16 bits) := CURRENT(i*16, 16 bits)
+      }
+    }
+    overloaded(CURRENT) := currentFired
+    SPIKE_VALID := valid && io.fire && ADDR (3 downto 0).andR
+    when(valid && io.fire){
+      spikesReg := spike ## (spikesReg >> 4)
+    }
   }
-  val SPIKE_VALID = s2.insert(s2(ADDR)(3 downto 0).andR && io.fire)
-  io.maskSpike.valid := s3.valid && s3(SPIKE_VALID)
-  io.maskSpike.address := s3(ADDR)(6 downto 4)
-  io.maskSpike.data := spikesReg
+
+  val s4 = new Stage(connection = M2S()){
+    io.cRam.write.valid := valid
+    io.cRam.write.address := ADDR
+    io.cRam.write.data := CURRENT
+
+    io.maskSpike.valid := SPIKE_VALID
+    io.maskSpike.data := spikesReg
+    io.maskSpike.address := ADDR(6 downto 4)
+  }
   pip.build()
 }
 
