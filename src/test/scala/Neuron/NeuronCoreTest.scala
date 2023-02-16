@@ -170,6 +170,7 @@ class NeuronComputeTest extends AnyFunSuite {
       SimTimeout(10000)
       val ram = new MemReadWriteMemSlave(dut.io.cRam, dut.clockDomain)
       val len = 512
+      val cRamAddrBase = Random.nextInt(4)
       val accTimes = Random.nextInt(4)
       val current = Array.tabulate(accTimes+1, len){
         (_, _) => randomInt16 / 8
@@ -182,6 +183,7 @@ class NeuronComputeTest extends AnyFunSuite {
 
       dut.io.threadHold #= threadHold
       dut.io.current.valid #= false
+      dut.io.cRamAddrBase #= cRamAddrBase
 
       // thread for assert spike
       val spikeMonitor = fork {
@@ -207,9 +209,10 @@ class NeuronComputeTest extends AnyFunSuite {
       }
 
       // assert current sum
-      dut.clockDomain.waitSampling(4)
+      dut.clockDomain.waitSampling(6)
       for(i <- 0 until len / 4){
-        val currentRead = ram.mem(i)
+        val cRamAddr = cRamAddrBase*128 + i
+        val currentRead = ram.mem(cRamAddr)
         val currentV = rawToV(currentRead, 16, 4)
         for(j <- 0 until 4){
           assert(currentV(j)==currentSumFired(i*4 + j), s"at $i")
