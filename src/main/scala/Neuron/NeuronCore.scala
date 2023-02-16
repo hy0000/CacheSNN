@@ -74,12 +74,11 @@ class NeuronCore extends NocCore {
   currentRam.io.bus.cmd.address := dataBus.cmd.address.resized
   currentRam.io.bus.cmd.assignUnassignedByName(dataBus.cmd)
   currentRam.io.bus.rsp >> dataBus.rsp
-  currentRam.io.mem.write.setIdle()
-  currentRam.io.mem.read.cmd.setIdle()
 
   val neuron = new NeuronCompute
   val spikeRam = new SpikeRam
   neuron.io.maskSpike >> spikeRam.io.write
+  neuron.io.cRam <> currentRam.io.mem
   Misc.idleIo(neuron.io)
   Misc.idleIo(spikeRam.io)
   idleInterface()
@@ -117,6 +116,7 @@ class NeuronCore extends NocCore {
     }
 
     compute.whenIsActive {
+      neuron.io.cRamAddrBase := mapInfo.addr
       neuron.io.fire := accTimes(mapInfo.addr) === mapInfo.acc
       neuron.io.current << interface.aer.body.toFlow
       neuron.io.threadHold := mapInfo.threshold
@@ -127,6 +127,7 @@ class NeuronCore extends NocCore {
 
     waitComputeDone
       .whenIsActive{
+        neuron.io.cRamAddrBase := mapInfo.addr
         neuron.io.fire := accTimes(mapInfo.addr) === mapInfo.acc
         neuron.io.threadHold := mapInfo.threshold
       }

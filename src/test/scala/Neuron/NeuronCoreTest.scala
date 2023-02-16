@@ -1,6 +1,6 @@
 package Neuron
 
-import CacheSNN.AER
+import CacheSNN.{AER, PacketType}
 import CacheSNN.CacheSnnTest._
 import CacheSNN.sim.{AerPacketSim, BasePacketAgent, BasePacketSim}
 import Neuron.sim.NeuronCoreConfigSim
@@ -74,6 +74,9 @@ class NeuronCoreAgent(noc:NocInterfaceLocal, clockDomain: ClockDomain)
     regWrite(Threshold0, regs.threshold0)
     regWrite(Threshold1, regs.threshold1)
     regWrite(LenField, regs.lenField)
+    //clear current
+    dataWrite(addr = 0, data = Seq.fill(256)(BigInt(0)))
+    dataWrite(addr = 256*8, data = Seq.fill(256)(BigInt(0)))
     // send current packet
     for(job <- jobQueue){
       for(mapInfo <- job.mapInfo){
