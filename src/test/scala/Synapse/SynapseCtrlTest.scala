@@ -257,6 +257,7 @@ class SynapseCtrlTest extends AnyFunSuite {
     dut.io.csr.len #= postLen / 4 - 1
     dut.io.csr.postNidBase #= 0
     dut.io.csr.flush #= false
+    dut.io.csr.preNidBase #= 0
     SynapseCtrlAgent(dut)
   }
 
