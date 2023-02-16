@@ -56,6 +56,8 @@ class NeuronCoreAgent(noc:NocInterfaceLocal, clockDomain: ClockDomain)
   override def onAER(p: BasePacketSim): Unit = {
     val aerP = AerPacketSim(p)
     val targetJob = jobQueue.find(job => job.nidBase==aerP.nid).get
+    assert(aerP.eventType == AER.TYPE.POST_SPIKE)
+    assert(aerP.nid == targetJob.nidBase, s"${aerP.nid} ${targetJob.nidBase}")
     for(i <- targetJob.spikeRaw.indices){
       assert(aerP.data(i) == targetJob.spikeRaw(i), s"${aerP.data(i).toString(16)} ${ targetJob.spikeRaw(i).toString(16)} at $i")
     }

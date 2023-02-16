@@ -137,7 +137,7 @@ class NeuronCore extends NocCore {
       interface.localSend.setHead(
         dest = destMap(sendCnt),
         src = 2,
-        custom = PacketType.AER.asBits ## B(0, 13 bits) ## AER.TYPE.PRE_SPIKE.asBits ## B(0, 13 bits) ## (mapInfo.nid<<9)
+        custom = PacketType.AER.asBits ## B(0, 13 bits) ## AER.TYPE.POST_SPIKE.asBits ## B(0, 13 bits) ## (mapInfo.nid<<9)
       )
       when(!interface.localSend.valid || interface.localSend.ready){
         sendCnt.increment()
