@@ -22,7 +22,7 @@ class CacheSnnTest extends AnyFunSuite {
     val weightAddrBase   = 0x0L
     val preSpikeBufAddr  = 0x100000L
     val postSpikeBufAddr = 0x100100L
-    val regBuffAddr      = 0x100200L
+    val regBuffAddr      = 0x100400L
     val dataBuffAddr     = 0x101000L
 
     val synapseCoreDest = Seq(0, 5, 1, 4)
@@ -30,6 +30,9 @@ class CacheSnnTest extends AnyFunSuite {
 
     var bpCnt = 0
     override def sendBp(bp: BasePacketSim, mAddr: Long) = {
+      if(bp.write && bp.packetType==PacketType.D_CMD){
+        mainMem.write(mAddr, bp.data)
+      }
       super.sendBp(bp, mAddr)
       bpCnt += 1 % (1<<16)
     }
@@ -60,8 +63,15 @@ class CacheSnnTest extends AnyFunSuite {
         flush(id = dest)
       }
 
+      // clear neuronCore ram
+      val bp = BasePacketSim.dataWrite(
+        dest = neuronCoreId, src = 0, id = 0,
+        addr = 0, data = Seq.fill(256)(BigInt(0))
+      )
+      sendBp(bp, mAddr = dataBuffAddr)
+      sendBp(bp, mAddr = dataBuffAddr + 256*8)
+      waitBpDone()
       // wait synapseCore flushed
-      dut.clockDomain.waitSampling(200)
       for(dest <- synapseCoreDest){
         waitFree(dest)
       }
@@ -118,7 +128,7 @@ class CacheSnnTest extends AnyFunSuite {
         }
     }
 
-    def setSynapseCoreParam(dest:Int, preLen:Int, postLen:Int, postNid:Int, refractory:Int, learning:Boolean): Unit ={
+    def setSynapseCoreParam(dest:Int, preLen:Int, postLen:Int, preNid:Int, postNid:Int, refractory:Int, learning:Boolean): Unit ={
       import Synapse.SynapseCore._
       val bp0 = BasePacketSim.regWrite(
         dest = dest, src = 0, id = 0,
@@ -128,8 +138,13 @@ class CacheSnnTest extends AnyFunSuite {
         dest = dest, src = 0, id = 0,
         addr = RegAddr.field2, data = if(learning) RegConfig.Field2.learning else RegConfig.Field2.inferenceOnly
       )
+      val bp3 = BasePacketSim.regWrite(
+        dest = dest, src = 0, id = 0,
+        addr = RegAddr.field3, data = preNid
+      )
       sendBp(bp0, mAddr = 0)
       sendBp(bp2, mAddr = 0)
+      sendBp(bp3, mAddr = 0)
     }
 
     def waitPostSpike(id: Int): Seq[Int] ={
@@ -142,7 +157,7 @@ class CacheSnnTest extends AnyFunSuite {
 
   def initDut(dut:CacheSNN): CacheSnnAgent ={
     dut.clockDomain.forkStimulus(2)
-    SimTimeout(100000)
+    SimTimeout(1000000)
     CacheSnnAgent(dut)
   }
 
@@ -169,7 +184,7 @@ class CacheSnnTest extends AnyFunSuite {
       val postNidMapSim = Seq(PostNidMapSim(nidBase = postSpikeNid>>10, len = 7))
       val neuronCoreConfig = Seq(NeuronCoreConfigSim(
         nidBase = postSpikeNid,
-        acc = 0, srcList = Seq(synapseCoreId), threshold = threshold , spikeLen = postLen / 64
+        acc = 0, srcList = Seq(), threshold = threshold , spikeLen = postLen / 64
       ))
 
       // config synapse core
@@ -177,17 +192,68 @@ class CacheSnnTest extends AnyFunSuite {
       agent.setNidMap(nidMapSim)
       agent.setPostNidMap(postNidMapSim)
       agent.setNeuronCoreParam(neuronCoreConfig)
-      agent.setSynapseCoreParam(synapseCoreId, preLen, postLen, postSpikeNid, refractory = 1, learning = false)
+      agent.setSynapseCoreParam(synapseCoreId, preLen, postLen, preSpikeNid, postSpikeNid, refractory = 1, learning = false)
       agent.waitBpDone()
-      val epoch = 1
-      // TODO: fix neuron core to support multi epoch
-      for(t <- 0 until epoch){
+      val epoch = 4
+      for(t <- 0 until epoch) {
         val preSpike = SpikeFun.randomSpike(preLen)
         agent.sendPreSpike(dest = synapseCoreId, preSpikeNid, preSpike)
         val postSpike = agent.waitPostSpike(id = 0)
         snn.spikeForward(preSpike)
         val postSpikeTruth = snn.spikeFire(threshold)
-        assert(postSpike == postSpikeTruth.toSeq)
+        assert(postSpike == postSpikeTruth.toSeq, s"at epoch $t")
+      }
+    }
+  }
+
+  test("two core inference test"){
+    complied.doSim { dut =>
+      val agent = initDut(dut)
+      val (preLen, postLen) = (1024, 512)
+      val snn = new SnnModel(preLen, postLen)
+
+      val synapseCoreId = Seq(0, 1)
+      val preSpikeNid = Seq(0, 1024)
+      val addrBase = Seq(0, 512 * postLen * 2)
+      val postSpikeNid = 1024
+      val threshold = 24000
+
+      snn.weightRandomize()
+      agent.loadWeight(snn.weight)
+
+      val nidMapSim = (0 to 1).map { i =>
+        NidMapSim(
+          nidBase = preSpikeNid(i) >> 10,
+          len = 127,
+          addrBase = addrBase(i) >> 10,
+          dest = synapseCoreId(i)
+        )
+      }
+      val postNidMapSim = Seq(PostNidMapSim(nidBase = postSpikeNid >> 10, len = 7))
+      val neuronCoreConfig = Seq(NeuronCoreConfigSim(
+        nidBase = postSpikeNid,
+        acc = 1, srcList = Seq(), threshold = threshold, spikeLen = postLen / 64
+      ))
+
+      agent.initial()
+      agent.setNidMap(nidMapSim)
+      agent.setPostNidMap(postNidMapSim)
+      agent.setNeuronCoreParam(neuronCoreConfig)
+      agent.setSynapseCoreParam(synapseCoreId.head, preLen / 2, postLen, preSpikeNid.head, postSpikeNid, refractory = 1, learning = false)
+      agent.setSynapseCoreParam(synapseCoreId.last, preLen / 2, postLen, preSpikeNid.last, postSpikeNid, refractory = 1, learning = false)
+      agent.waitBpDone()
+      val epoch = 4
+      for (t <- 0 until epoch) {
+        val preSpike = SpikeFun.randomSpike(preLen)
+        val preSpikeSubDivided = preSpike.grouped(preLen / 2).map(_ ++ Seq.fill(preLen / 2)(0)).toSeq
+        for (i <- 0 to 1) {
+          agent.sendPreSpike(dest = synapseCoreId(i), preSpikeNid(i), preSpikeSubDivided(i))
+          agent.waitBpDone()
+        }
+        val postSpike = agent.waitPostSpike(id = 0)
+        snn.spikeForward(preSpike)
+        val postSpikeTruth = snn.spikeFire(threshold)
+        assert(postSpike == postSpikeTruth.toSeq, s"at epoch $t")
       }
     }
   }
