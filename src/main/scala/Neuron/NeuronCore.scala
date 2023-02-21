@@ -1,7 +1,7 @@
 package Neuron
 
 import CacheSNN.{AER, NocCore, PacketType}
-import Util.{MemReadWrite, MemWriteCmd, Misc, PipelinedMemoryBusRam}
+import Util.{Dsp48E, MemReadWrite, MemWriteCmd, Misc, PipelinedMemoryBusRam}
 import Synapse.{Buffer, SynapseCore}
 import spinal.core._
 import spinal.core.sim._
@@ -29,14 +29,17 @@ class NeuronCore extends NocCore {
     val src = Bits(4 bits)
     val threshold = SInt(16 bits)
     val spikeLen = UInt(4 bits)
+    val alpha = SInt(16 bits)
   }
 
   val regArea = new Area {
     val busIf = Apb3BusInterface(interface.regBus, SizeMapping(0, 256 Byte), 0, "")
     val NidField  = busIf.newReg("nid field")
     val MapField  = busIf.newReg("map field")
-    val ThresholdField0 = busIf.newReg("threshold field0")
-    val ThresholdField1 = busIf.newReg("threshold field0")
+    val ParamField = (0 until 4).map{i =>
+      val paramField = busIf.newReg(s"param field $i")
+      paramField.setName(s"PARAMFIELD$i")
+    }
     val LenField = busIf.newReg("len field")
 
     val nidMap = Vec(NidMap(), 4)
@@ -47,13 +50,9 @@ class NeuronCore extends NocCore {
       nidMap(i).addr := MapField.field(UInt(2 bits), WO, s"addr $i").setName(s"addr_$i")
       nidMap(i).acc := MapField.field(UInt(2 bits), WO, s"acc $i").setName(s"acc_$i")
       nidMap(i).spikeLen := LenField.field(UInt(4 bits), WO, s"spike len $i").setName(s"spike_len_$i")
+      nidMap(i).threshold := ParamField(i).field(SInt(16 bits), WO, s"threshold $i").setName(s"threshold_$i")
+      nidMap(i).alpha := ParamField(i).field(SInt(16 bits), WO, s"alpha $i").setName(s"v_alpha_$i")
     }
-
-    val threshold0 = ThresholdField0.field(SInt(16 bits), WO, s"threshold 0")
-    val threshold1 = ThresholdField0.field(SInt(16 bits), WO, s"threshold 1")
-    val threshold2 = ThresholdField1.field(SInt(16 bits), WO, s"threshold 2")
-    val threshold3 = ThresholdField1.field(SInt(16 bits), WO, s"threshold 3")
-    Seq(threshold0, threshold1, threshold2, threshold3).zip(nidMap).foreach(z => z._2.threshold := z._1)
     busIf.accept(HtmlGenerator("NeuronCoreReg", "NeuronCore"))
   }
 
@@ -89,12 +88,20 @@ class NeuronCore extends NocCore {
     val idle = makeInstantEntry()
     val mapNid = new State
     val compute = new State
-    val waitComputeDone = new StateDelay(4)
+    val waitComputeDone = new StateDelay(8)
     val sendSpikeHead = new State
     val sendSpikeBody = new State
 
     val mapInfo = NidMap() setAsReg()
     val destMapOh = B"1" ## mapInfo.src
+
+    def paramAssign(): Unit ={
+      neuron.io.cRamAddrBase := mapInfo.addr
+      neuron.io.alpha := mapInfo.alpha
+      neuron.io.fire := accTimes(mapInfo.addr) === mapInfo.acc
+      neuron.io.acc := accTimes(mapInfo.addr) =/= 0
+      neuron.io.threadHold := mapInfo.threshold
+    }
 
     idle.whenIsActive {
       interface.aer.head.ready := True
@@ -116,10 +123,8 @@ class NeuronCore extends NocCore {
     }
 
     compute.whenIsActive {
-      neuron.io.cRamAddrBase := mapInfo.addr
-      neuron.io.fire := accTimes(mapInfo.addr) === mapInfo.acc
+      paramAssign()
       neuron.io.current << interface.aer.body.toFlow
-      neuron.io.threadHold := mapInfo.threshold
       when(neuron.io.current.lastFire){
         goto(waitComputeDone)
       }
@@ -127,9 +132,7 @@ class NeuronCore extends NocCore {
 
     waitComputeDone
       .whenIsActive{
-        neuron.io.cRamAddrBase := mapInfo.addr
-        neuron.io.fire := accTimes(mapInfo.addr) === mapInfo.acc
-        neuron.io.threadHold := mapInfo.threshold
+        paramAssign()
       }
       .whenCompleted{
         when(neuron.io.fire) {
@@ -177,9 +180,11 @@ class NeuronCore extends NocCore {
 }
 
 class NeuronCompute extends Component {
+  def alphaShift = 15
   val io = new Bundle {
     val threadHold = in SInt(16 bits)
-    val fire = in Bool()
+    val alpha = in SInt(16 bits)
+    val fire, acc = in Bool()
     val current = slave(Flow(Fragment(Bits(64 bits))))
     val maskSpike = master(Flow(MemWriteCmd(64, log2Up(512 / 64))))
     val cRam = master(MemReadWrite(dataWidth = 64, addrWidth = 9))
@@ -192,59 +197,83 @@ class NeuronCompute extends Component {
     addrCnt.clear()
   }
   val spikesReg = Reg(Bits(64 bits))
+  val iRam = Mem(Bits(64 bits), N*4)
+  val iRamRead = iRam.readSyncPort()
 
-  def vAdd(a: Vec[SInt], b: Vec[SInt]): Bits = {
-    a.zip(b).map(z => z._1 +| z._2)
-      .map(_.asBits)
-      .reduce((b0, b1) => b1 ## b0)
-  }
-
-  implicit def bToS(a: Bits): Vec[SInt] = {
-    Vec(a.subdivideIn(16 bits).map(_.asSInt))
-  }
+  val iDsp = Seq.fill(4)(new Dsp48E)
+  val vDsp = Seq.fill(4)(new Dsp48E)
+  vDsp.foreach(_.io.Pin := 0)
+  iDsp.zip(vDsp).foreach(z => z._1.io.Pin := z._2.io.Pout)
 
   implicit val pip = new Pipeline
   val ADDR = Stageable(cloneOf(io.cRam.write.address))
-  val CURRENT = Stageable(Bits(64 bits))
+  val I = Stageable(Bits(64 bits))
+  val V = Stageable(Bits(64 bits))
   val SPIKE_VALID = Stageable(Bool())
+
+  val one = Vec(S(1, 16 bits), 4).asBits
 
   val s0 = new Stage(){
     valid := io.current.valid
     ADDR := io.cRamAddrBase @@ addrCnt.value
-    CURRENT := io.current.fragment
-    io.cRam.read.cmd.valid := valid
+    I := io.current.fragment
+    io.cRam.read.cmd.valid := io.fire && valid
     io.cRam.read.cmd.payload := ADDR
+    iRamRead.cmd.valid := io.acc && valid
+    iRamRead.cmd.payload := ADDR
   }
 
-  val s1 = new Stage(connection = M2S())
+  val s1 = new Stage(connection = M2S()){
+    vDsp.foreach(_.io.A := 1<<alphaShift)
+    vDsp.foreach(_.io.D := (-io.alpha).resized)
+  }
 
   val s2 = new Stage(connection = M2S()){
-    val currentOld = io.cRam.read.rsp
-    overloaded(CURRENT) := vAdd(currentOld, CURRENT.asBits)
+    val iAcc = io.acc ? RegNext(iRamRead.rsp) | 0
+    val v = io.fire ? io.cRam.read.rsp | 0
+    for(i <- 0 until 4){
+      iDsp(i).io.A := iAcc(i*16, 16 bits).asSInt.resized
+      iDsp(i).io.D := I(i*16, 16 bits).asSInt.resized
+      vDsp(i).io.B := v(i*16, 16 bits).asSInt.resized
+    }
   }
 
   val s3 = new Stage(connection = M2S()){
-    val currentFired = B(0, 64 bits)
+    when(io.fire){
+      iDsp.foreach(_.io.B := io.alpha.resized)
+    }otherwise{
+      iDsp.foreach(_.io.B := 1<<alphaShift)
+    }
+  }
+
+  val s4 = new Stage(connection = M2S())
+
+  val s5 = new Stage(connection = M2S())
+
+  val s6 = new Stage(connection = M2S()){
+    val vFired = B(0, 64 bits)
     val spike = B(0, 4 bits)
+    val v = iDsp.map(_.io.Pout.fixTo(alphaShift + 15 downto alphaShift, RoundType.ROUNDTOZERO))
     for(i <- 0 until 4){
-      spike(i) := CURRENT(i*16, 16 bits).asSInt >= io.threadHold
+      spike(i) := v(i) >= io.threadHold
       when(spike(i) && io.fire){
-        currentFired(i*16, 16 bits) := 0
+        vFired(i*16, 16 bits) := 0
       }otherwise{
-        currentFired(i*16, 16 bits) := CURRENT(i*16, 16 bits)
+        vFired(i*16, 16 bits) := v(i).asBits
       }
     }
-    overloaded(CURRENT) := currentFired
+    V := vFired
     SPIKE_VALID := valid && io.fire && ADDR (3 downto 0).andR
     when(valid && io.fire){
       spikesReg := spike ## (spikesReg >> 4)
     }
+    iRam.write(address = ADDR, data = Vec(v).asBits, enable = valid)
   }
 
-  val s4 = new Stage(connection = M2S()){
-    io.cRam.write.valid := valid
+  val s7 = new Stage(connection = M2S()){
+    io.cRam.write.valid := io.fire && valid
     io.cRam.write.address := ADDR
-    io.cRam.write.data := CURRENT
+    io.cRam.write.data := V
 
     io.maskSpike.valid := SPIKE_VALID
     io.maskSpike.data := spikesReg

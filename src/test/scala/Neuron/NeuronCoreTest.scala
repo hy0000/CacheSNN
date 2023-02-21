@@ -20,7 +20,7 @@ case class NeuronJob(nidBase:Int,
                      threshold: Int){
   def spikeRaw: Seq[BigInt] = {
     val current = mapInfo.map(_.current)
-    val currentSum = current.transpose.map(_.sum)
+    val currentSum = current.transpose.map(_.sum / 2)
     val spikes = currentSum.map(_ >= threshold).map(booleanToInt)
     vToRawV(spikes, width = 1, 64)
   }
@@ -31,7 +31,8 @@ case class NeuronJob(nidBase:Int,
       acc = mapInfo.length-1,
       srcList = mapInfo.map(_.src),
       threshold = threshold,
-      spikeLen = mapInfo.head.current.length
+      spikeLen = mapInfo.head.current.length,
+      alpha = 1<<14
     )
   }
 }
@@ -71,9 +72,10 @@ class NeuronCoreAgent(noc:NocInterfaceLocal, clockDomain: ClockDomain)
     val regs = NeuronCoreConfigSim.genRegField(cfg)
     regWrite(NidField, regs.nidField)
     regWrite(MapField, regs.mapField)
-    regWrite(Threshold0, regs.threshold0)
-    regWrite(Threshold1, regs.threshold1)
     regWrite(LenField, regs.lenField)
+    ParamField.zip(regs.paramField).foreach{z =>
+      regWrite(z._1, z._2)
+    }
     //clear current
     dataWrite(addr = 0, data = Seq.fill(256)(BigInt(0)))
     dataWrite(addr = 256*8, data = Seq.fill(256)(BigInt(0)))
@@ -119,7 +121,7 @@ class NeuronCoreTest extends AnyFunSuite {
     complied.doSim{ dut =>
       val agent = initDut(dut)
       val mapInfo = Seq(0, 1, 4, 5).map{src =>
-        val current = Array.fill(256 + 64)(Random.nextInt(2))
+        val current = Array.fill(256 + 64)(Random.nextInt(4))
         MapInfo(current, src)
       }
       val job = NeuronJob(0x0, mapInfo.toArray, threshold = 2)
@@ -176,14 +178,24 @@ class NeuronComputeTest extends AnyFunSuite {
         (_, _) => randomInt16 / 8
       }
 
-      val currentSum = current.transpose.map(_.sum)
-      val threadHold = currentSum.sum / currentSum.length
-      val spikes = currentSum.map(_ >= threadHold).map(booleanToInt)
-      val currentSumFired = currentSum.zip(spikes).map(z => if(z._2==1) 0 else z._1)
+      val initV = Array.fill(len)(randomInt16 / 8)
+      val rawInitV = vToRawV(initV, width = 16, 4)
+      for(i <- 0 until len / 4){
+        val addr = cRamAddrBase*128 + i
+        ram.mem(addr) = rawInitV(i)
+      }
+
+      val alpha = 1<<(dut.alphaShift-1) // 0.5
+      val iSum = current.transpose.map(_.sum)
+      val vSum = iSum.zip(initV).map(z => (z._1 + z._2)/2) // do no modify, or will contribute to rounding error
+      val threadHold = vSum.sum / vSum.length
+      val spikes = vSum.map(_ >= threadHold).map(booleanToInt)
+      val vSumFired = vSum.zip(spikes).map(z => if(z._2==1) 0 else z._1)
 
       dut.io.threadHold #= threadHold
       dut.io.current.valid #= false
       dut.io.cRamAddrBase #= cRamAddrBase
+      dut.io.alpha #= alpha
 
       // thread for assert spike
       val spikeMonitor = fork {
@@ -197,6 +209,7 @@ class NeuronComputeTest extends AnyFunSuite {
 
       // input
       for(t <- 0 to accTimes){
+        dut.io.acc #= t!=0
         dut.io.fire #= t==accTimes
         dut.io.current.valid #= true
         for(i <- 0 until len / 4){
@@ -205,7 +218,7 @@ class NeuronComputeTest extends AnyFunSuite {
           dut.clockDomain.waitSampling()
         }
         dut.io.current.valid #= false
-        dut.clockDomain.waitSampling(Random.nextInt(10)+3)
+        dut.clockDomain.waitSampling(Random.nextInt(10)+7)
       }
 
       // assert current sum
@@ -215,7 +228,7 @@ class NeuronComputeTest extends AnyFunSuite {
         val currentRead = ram.mem(cRamAddr)
         val currentV = rawToV(currentRead, 16, 4)
         for(j <- 0 until 4){
-          assert(currentV(j)==currentSumFired(i*4 + j), s"at $i")
+          assert(currentV(j)==vSumFired(i*4 + j), s"at $i")
         }
       }
       spikeMonitor.join()
