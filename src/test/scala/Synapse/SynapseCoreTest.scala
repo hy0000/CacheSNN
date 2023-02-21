@@ -138,13 +138,19 @@ class SynapseCoreTest extends AnyFunSuite {
       val preSpike = Array.tabulate(epoch, preLen) {
         (_, _) => if (Random.nextBoolean()) 1 else 0
       }
-      val snnModel = new SnnModel(preLen, postLen)
+      val current = Array.fill(postLen)(0)
       for (t <- 0 until epoch) {
-        snnModel.spikeForward(preSpike(t))
+        for (nid <- 0 until preLen) {
+          if (preSpike(t)(nid) == 1) {
+            for (j <- 0 until postLen) {
+              current(j) += agent.weight(nid)(j)
+            }
+          }
+        }
         agent.sendPreSpike(preSpike(t))
         agent.waitCurrentReceived()
       }
-      assert(agent.current sameElements snnModel.current)
+      assert(agent.current sameElements current)
 
       // assert spike ram is zero
       val zeroSpikePre = Array.tabulate(epoch, preLen)((_, _) => 0)

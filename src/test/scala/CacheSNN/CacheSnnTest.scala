@@ -117,8 +117,8 @@ class CacheSnnTest extends AnyFunSuite {
     def setNeuronCoreParam(neuronCoreConfig: Seq[NeuronCoreConfigSim]): Unit = {
       import Neuron.sim.NeuronRegAddr._
       val regs = NeuronCoreConfigSim.genRegField(neuronCoreConfig)
-      Seq(NidField, MapField, Threshold0, Threshold1, LenField)
-        .zip(Seq(regs.nidField, regs.mapField, regs.threshold0, regs.threshold1, regs.lenField))
+      (Seq(NidField, MapField,LenField) ++ ParamField)
+        .zip(Seq(regs.nidField, regs.mapField, regs.lenField) ++ regs.paramField)
         .foreach{case (addr, v) =>
           val bp = BasePacketSim.regWrite(
             dest = neuronCoreId, src = 0, id = 0,
@@ -161,11 +161,14 @@ class CacheSnnTest extends AnyFunSuite {
     CacheSnnAgent(dut)
   }
 
+  val alpha = 0.75f
+  val alphaFix = math.round(alpha * (1<<15))
+
   test("single core inference test"){
     complied.doSim{ dut =>
       val agent = initDut(dut)
       val (preLen, postLen) = (1024, 512)
-      val snn = new SnnModel(preLen, postLen)
+      val snn = new SnnModel(preLen, postLen, alpha)
 
       val synapseCoreId = 0
       val preSpikeNid = 0x0
@@ -184,7 +187,8 @@ class CacheSnnTest extends AnyFunSuite {
       val postNidMapSim = Seq(PostNidMapSim(nidBase = postSpikeNid>>10, len = 7))
       val neuronCoreConfig = Seq(NeuronCoreConfigSim(
         nidBase = postSpikeNid,
-        acc = 0, srcList = Seq(), threshold = threshold , spikeLen = postLen / 64
+        acc = 0, srcList = Seq(), threshold = threshold , spikeLen = postLen / 64,
+        alpha = alphaFix
       ))
 
       // config synapse core
@@ -207,10 +211,10 @@ class CacheSnnTest extends AnyFunSuite {
   }
 
   test("two core inference test"){
-    complied.doSim { dut =>
+    complied.doSim(1) { dut =>
       val agent = initDut(dut)
       val (preLen, postLen) = (1024, 512)
-      val snn = new SnnModel(preLen, postLen)
+      val snn = new SnnModel(preLen, postLen, alpha = alpha)
 
       val synapseCoreId = Seq(0, 1)
       val preSpikeNid = Seq(0, 1024)
@@ -232,7 +236,8 @@ class CacheSnnTest extends AnyFunSuite {
       val postNidMapSim = Seq(PostNidMapSim(nidBase = postSpikeNid >> 10, len = 7))
       val neuronCoreConfig = Seq(NeuronCoreConfigSim(
         nidBase = postSpikeNid,
-        acc = 1, srcList = Seq(), threshold = threshold, spikeLen = postLen / 64
+        acc = 1, srcList = Seq(), threshold = threshold, spikeLen = postLen / 64,
+        alpha = alphaFix
       ))
 
       agent.initial()

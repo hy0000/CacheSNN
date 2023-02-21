@@ -2,12 +2,12 @@ package Util.sim
 
 import scala.util.Random
 
-class SnnModel(preLen:Int, postLen:Int) {
+class SnnModel(preLen:Int, postLen:Int, alpha:Float = 0.25f) {
   var learning = false
   val weight = Array.tabulate(preLen, postLen){
     (_, _) => 1
   }
-  val current = Array.fill(postLen)(0)
+  val current, iIn = Array.fill(postLen)(0)
   val ltpLut = (1 to 16).toArray
   val ltdLut = (1 to 16).map(_*(-10)).toArray
   //val ltpLut = Array.fill(16)(0)//(1 to 16).toArray
@@ -28,17 +28,28 @@ class SnnModel(preLen:Int, postLen:Int) {
   }
 
   def spikeForward(preSpike:Array[Int]): Unit ={
+    for (j <- 0 until postLen) {
+      iIn(j) = 0
+    }
     for(nid <- 0 until preLen){
       if(preSpike(nid)==1){
         for (j <- 0 until postLen) {
-          current(j) += weight(nid)(j)
+          iIn(j) += weight(nid)(j)
         }
       }
     }
   }
 
   def spikeFire(threshold: Int): Array[Int] ={
+    val currentMax = (1<<16) - 1
     val spike = Array.fill(postLen)(0)
+    for (j <- 0 until postLen) {
+      val c = (1-alpha) * current(j) + iIn(j) * alpha
+      current(j) = math.round(c)
+      if(current(j)>=currentMax){
+        current(j) = currentMax
+      }
+    }
     for(i <- current.indices){
       if(current(i) >= threshold){
         spike(i) = 1
