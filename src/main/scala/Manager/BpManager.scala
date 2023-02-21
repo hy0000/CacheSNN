@@ -178,7 +178,7 @@ class BpManager extends Component {
     }
 
     ptrIncr1.whenIsActive{
-      when(!cmd.valid && !io.free){
+      when(!cmd.valid && cmdRspPtr=/=cmdProcessPtr){
         io.cmdDone := True
         cmdRspPtr.increment()
         goto(ptrIncr0)
