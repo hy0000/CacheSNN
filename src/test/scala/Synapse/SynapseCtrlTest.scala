@@ -21,7 +21,7 @@ class SpikeDecoderTest extends AnyFunSuite {
     complied.doSim { dut =>
       dut.clockDomain.forkStimulus(2)
       SimTimeout(100000)
-      val nidBase = Random.nextInt(0xFF00)
+      val nidBase = Random.nextInt(65536 - 1024)
       val spikeMask = Seq.fill(SynapseCore.maxPreSpike)(Random.nextInt(2))
       val spikeMaskRaw = spikeMask.grouped(SynapseCore.busDataWidth)
         .map(g => vToRaw(g, 1))
