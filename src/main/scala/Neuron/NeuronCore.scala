@@ -253,7 +253,7 @@ class NeuronCompute extends Component {
   val s6 = new Stage(connection = M2S()){
     val vFired = B(0, 64 bits)
     val spike = B(0, 4 bits)
-    val v = iDsp.map(_.io.Pout.fixTo(alphaShift + 15 downto alphaShift, RoundType.ROUNDTOZERO))
+    val v = iDsp.map(_.io.Pout.fixTo(alphaShift + 15 downto alphaShift, RoundType.ROUNDUP))
     for(i <- 0 until 4){
       spike(i) := v(i) >= io.threadHold
       when(spike(i) && io.fire){
