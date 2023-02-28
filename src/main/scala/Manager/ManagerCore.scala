@@ -18,7 +18,7 @@ class ManagerCore extends NocCore {
   }
 
   val regArea = new Area {
-    val busIf = AxiLite4BusInterface(io.axiLite, SizeMapping(0, 256 Byte), "")
+    val busIf = AxiLite4BusInterface(io.axiLite, SizeMapping(0, 128 Byte), "")
     val NocField0 = busIf.newReg("noc field 0")
     val NocField1 = busIf.newReg("noc field 1")
     val NocField2 = busIf.newReg("noc field 2")
