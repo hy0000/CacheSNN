@@ -4,6 +4,7 @@ import Manager.ManagerCore
 import Neuron.NeuronCore
 import RingNoC.Ring
 import Synapse.SynapseCore
+import Util.Misc.{xAxiLiteRename, xAxiRename}
 import spinal.core._
 import spinal.lib._
 import spinal.lib.bus.amba4.axi._
@@ -27,19 +28,34 @@ class CacheSNN extends Component {
     val axiLite = slave(AxiLite4(CacheSNN.axiLiteSlaveConfig))
   }
 
-  val synapseCores = Seq.fill(4)(new SynapseCore)
-  val neuronCore = new NeuronCore
-  val manager = new ManagerCore
+  val mainRst = ResetCtrl.asyncAssertSyncDeassert(
+    input = clockDomain.reset,
+    clockDomain = clockDomain,
+    inputPolarity = LOW,
+    outputPolarity = LOW
+  )
+  val mainClockDomain = ClockDomain(clockDomain.clock, mainRst, config = MySpinalConfig.defaultConfigForClockDomains)
 
-  val ringBus = Ring()
+  val _ = new ClockingArea(mainClockDomain){
+    val synapseCores = Seq.fill(4)(new SynapseCore)
+    val neuronCore = new NeuronCore
+    val manager = new ManagerCore
 
-  val synapseCoreMapping = synapseCores.map(_.noc).zip(Seq(0, 1, 4, 5))
-  ringBus.addNodes(synapseCoreMapping:_*)
-  ringBus.addNode(neuronCore.noc, 2)
-  ringBus.addNode(manager.noc, 3)
+    val ringBus = Ring()
 
-  manager.io.axiLite <> io.axiLite
-  manager.io.axi <> io.axi
+    val synapseCoreMapping = synapseCores.map(_.noc).zip(Seq(0, 1, 4, 5))
+    ringBus.addNodes(synapseCoreMapping: _*)
+    ringBus.addNode(neuronCore.noc, 2)
+    ringBus.addNode(manager.noc, 3)
+
+    manager.io.axiLite <> io.axiLite
+    manager.io.axi <> io.axi
+  }
+
+  addPrePopTask{() =>
+    xAxiRename(io.axi, "M0_")
+    xAxiLiteRename(io.axiLite, "S0_")
+  }
 }
 
 object MySpinalConfig extends SpinalConfig(
