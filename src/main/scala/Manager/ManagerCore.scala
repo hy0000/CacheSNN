@@ -93,6 +93,10 @@ class ManagerCore extends NocCore {
 
     val DoneCntField = busIf.newReg("preSpike field")
     val nocDoneCnt = DoneCntField.field(UInt(16 bits), RW, "noc done cnt")
+
+    val versionField = busIf.newReg("version field")
+    val version = versionField.field(Bits(32 bits), RO, s"version")
+    version := 0x233
     busIf.accept(HtmlGenerator("ManagerCoreReg", "ManagerCore"))
   }
 
