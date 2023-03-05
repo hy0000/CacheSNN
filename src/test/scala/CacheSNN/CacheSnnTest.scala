@@ -64,12 +64,13 @@ class CacheSnnTest extends AnyFunSuite {
       }
 
       // clear neuronCore ram
-      val bp = BasePacketSim.dataWrite(
-        dest = neuronCoreId, src = 0, id = 0,
-        addr = 0, data = Seq.fill(256)(BigInt(0))
-      )
-      sendBp(bp, mAddr = dataBuffAddr)
-      sendBp(bp, mAddr = dataBuffAddr + 256*8)
+      Seq(0, 2048).foreach{ addr =>
+        val bp = BasePacketSim.dataWrite(
+          dest = neuronCoreId, src = 0, id = 0,
+          addr = addr, data = Seq.fill(256)(BigInt(0))
+        )
+        sendBp(bp, mAddr = dataBuffAddr)
+      }
       waitBpDone()
       // wait synapseCore flushed
       for(dest <- synapseCoreDest){
