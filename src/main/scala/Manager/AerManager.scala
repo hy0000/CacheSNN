@@ -113,7 +113,7 @@ class AerManager extends Component {
 
     idle.whenIsActive{
       when(io.aer.head.valid){
-        when(isFetch || isWrite){
+        when((isFetch || isWrite) && !io.preSpikeCmd.valid){
           goto(nidMatch)
         }elsewhen(wFetchCmdFifo.io.occupancy===0 && wWriteCmdFifo.io.occupancy===0){
           exitFsm()
