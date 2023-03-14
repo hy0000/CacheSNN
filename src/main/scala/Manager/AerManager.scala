@@ -245,12 +245,13 @@ class AerManager extends Component {
       io.axi.b.ready := wWriteCmdFifo.io.pop.valid
       wWriteCmdFifo.io.pop.ready := io.axi.b.valid
 
-      val nocHead = RegInit(True) clearWhen wFetchCmdFifo.io.pop.fire setWhen io.localSend.lastFire
+      val nocHead = RegInit(True) clearWhen io.localSend.firstFire setWhen io.localSend.lastFire
+      wFetchCmdFifo.io.pop.ready := io.localSend.lastFire
       when(nocHead){
         val aerHead = new AerPacketHead
         aerHead.eventType := AER.TYPE.W_WRITE
         aerHead.nid := wFetchCmdFifo.io.pop.nid
-        io.localSend.arbitrationFrom(wFetchCmdFifo.io.pop)
+        io.localSend.valid := wFetchCmdFifo.io.pop.valid && io.axi.readRsp.valid
         io.localSend.setHead(
           dest = wFetchCmdFifo.io.pop.dest,
           src = 0,

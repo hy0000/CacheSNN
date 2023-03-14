@@ -254,7 +254,7 @@ class CacheSnnTest extends AnyFunSuite {
         val preSpikeSubDivided = preSpike.grouped(preLen / 2).map(_ ++ Seq.fill(preLen / 2)(0)).toSeq
         for (i <- 0 to 1) {
           agent.sendPreSpike(dest = synapseCoreId(i), preSpikeNid(i), preSpikeSubDivided(i))
-          agent.waitBpDone()
+          dut.clockDomain.waitSampling(1000)
         }
         val postSpike = agent.waitPostSpike(id = 0)
         snn.spikeForward(preSpike)
