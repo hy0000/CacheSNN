@@ -112,7 +112,7 @@ class AerManager extends Component {
     val axiAddr = (matchedNidMap.addrBase + nidOffset) @@ U(0, 10 bits)
 
     idle.whenIsActive{
-      when(io.aer.head.valid){
+      when(io.aer.head.valid || io.preSpikeCmd.valid){
         when((isFetch || isWrite) && !io.preSpikeCmd.valid){
           goto(nidMatch)
         }elsewhen(wFetchCmdFifo.io.occupancy===0 && wWriteCmdFifo.io.occupancy===0){

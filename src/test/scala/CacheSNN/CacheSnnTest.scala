@@ -10,7 +10,7 @@ import org.scalatest.funsuite.AnyFunSuite
 import spinal.core.sim._
 
 object CacheSnnTest {
-  val simConfig = SpinalSimConfig(_spinalConfig = MySpinalConfig)
+  val simConfig = SpinalSimConfig(_spinalConfig = MySpinalConfig).withWave
 }
 
 class CacheSnnTest extends AnyFunSuite {
