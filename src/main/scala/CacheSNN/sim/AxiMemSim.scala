@@ -10,7 +10,7 @@ object AxiMemSim {
 
 class AxiMemSim(axi:Axi4, clockDomain: ClockDomain){
   val dWidth = axi.config.bytePerWord
-  val mem = AxiMemorySim(axi, clockDomain, AxiMemorySimConfig())
+  val mem = AxiMemorySim(axi, clockDomain, AxiMemorySimConfig(readResponseDelay = 40, writeResponseDelay = 30))
   mem.start()
 
   def write(addrBase: Long, data:Seq[BigInt]): Unit = {
