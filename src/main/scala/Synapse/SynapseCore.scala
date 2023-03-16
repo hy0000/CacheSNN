@@ -2,7 +2,7 @@ package Synapse
 
 import CacheSNN.{AER, NocCore}
 import Synapse.SynapseCore.{maxPreSpike, timeWindowWidth}
-import Util.MemAccessBusConfig
+import Util.{MemAccessBusConfig, MemAccessBusToPipeLineMemoryBus}
 import spinal.core._
 import spinal.lib._
 import spinal.lib.bus.misc.SizeMapping
@@ -170,12 +170,19 @@ class SynapseCore extends NocCore {
   interconnect.addSlave(ltpLut.io.bus, AddrMapping.ltpLut)
   interconnect.addSlave(ltdLut.io.bus, AddrMapping.ltdLut)
 
+  val busConverter = Seq(synapseCtrl.io.bus, interface.dataBus).map{bus =>
+    val trans = new MemAccessBusToPipeLineMemoryBus(bus.c)
+    trans.io.input.cmd << bus.cmd
+    trans.io.input.rsp >> bus.rsp
+    trans
+  }
+
   interconnect.addMaster(
-    synapseCtrl.io.bus.toPipeLineMemoryBus,
+    busConverter.head.io.output,
     Seq(cache.io.bus, currentRam.io.bus, preSpikeRam.io.bus, postSpikeRam.io.bus)
   )
   interconnect.addMaster(
-    interface.dataBus.toPipeLineMemoryBus,
+    busConverter.last.io.output,
     Seq(preSpikeRam.io.bus, postSpikeRam.io.bus, ltpLut.io.bus, ltdLut.io.bus)
   )
 
