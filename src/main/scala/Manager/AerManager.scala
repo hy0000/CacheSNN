@@ -179,7 +179,7 @@ class AerManager extends Component {
 
     val matchCnt = Counter(4)
     val postNidMap = io.postNidMap(matchCnt)
-    val axiAddr = io.postAddrBase + (matchCnt.value<<(log2Up(512 / 8)))
+    val axiAddr = io.postAddrBase + (matchCnt.value<<(log2Up(1024 / 8)))
 
     nidMatch.whenIsActive {
       val nidBase = io.aer.head.nid(15 downto 10)

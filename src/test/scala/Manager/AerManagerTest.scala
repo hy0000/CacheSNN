@@ -117,7 +117,7 @@ class AerManagerTest extends AnyFunSuite {
 
       for(i <- 0 until n){
         dut.clockDomain.waitSamplingWhere(dut.io.nidEpochDone(i).toBoolean)
-        val mAddr = postSpikeBufAddr + i * 8*8
+        val mAddr = postSpikeBufAddr + i * 16 * 8
         agent.mainMem.assertData(mAddr, postSpikePacket(i).data)
       }
     }
