@@ -14,7 +14,7 @@ object CacheSnnTest {
 }
 
 class CacheSnnTest extends AnyFunSuite {
-  val complied = simConfig.allOptimisation.compile(new CacheSNN)
+  val complied = simConfig.compile(new CacheSNN)
 
   case class CacheSnnAgent(dut:CacheSNN) extends ManagerCoreCtrl(dut.io.axiLite, dut.clockDomain){
     val mainMem = AxiMemSim(dut.io.axi, dut.clockDomain)
@@ -212,7 +212,7 @@ class CacheSnnTest extends AnyFunSuite {
   }
 
   test("two core inference test"){
-    complied.doSim(1) { dut =>
+    complied.doSim { dut =>
       val agent = initDut(dut)
       val (preLen, postLen) = (1024, 512)
       val snn = new SnnModel(preLen, postLen, alpha = alpha)
@@ -260,6 +260,22 @@ class CacheSnnTest extends AnyFunSuite {
         snn.spikeForward(preSpike)
         val postSpikeTruth = snn.spikeFire(threshold)
         assert(postSpike == postSpikeTruth.toSeq, s"at epoch $t")
+      }
+    }
+  }
+
+  test("current ram read test"){
+    complied.doSim { dut =>
+      val agent = initDut(dut)
+      agent.initial()
+      for(i <- 0 until 4){
+        val addr = i * 1024
+        val bp = BasePacketSim.dataRead(
+          dest = 2, src = 0, id = 0,
+          addr = addr, len = 127
+        )
+        agent.sendBp(bp, mAddr = 0x10000 + addr)
+        agent.waitBpDone()
       }
     }
   }

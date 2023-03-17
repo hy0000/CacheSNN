@@ -143,17 +143,18 @@ class NocUnPacker(supportMemMaster:Boolean, supportMemSlave:Boolean) extends Com
 
     cmd
       .whenIsActive{
-        io.dataBus.cmd.valid := True
         io.dataBus.cmd.write := bphReg.write
         io.dataBus.cmd.len := bphReg.field1.asUInt
         io.dataBus.cmd.address := bphReg.field2.asUInt.resized
         when(bphReg.write) {
+          io.dataBus.cmd.valid := io.nocRec.valid
           io.dataBus.cmd.data := io.nocRec.flit
           io.nocRec.ready := io.dataBus.cmd.ready
           when(io.nocRec.lastFire){
             goto(rspHead)
           }
         }otherwise{
+          io.dataBus.cmd.valid := True
           when(io.dataBus.cmd.ready){
             goto(rspHead)
           }
