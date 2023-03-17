@@ -8,6 +8,7 @@ import RingNoC.NocInterfaceLocal
 import Util.sim.MemReadWriteMemSlave
 import Util.sim.NumberTool._
 import org.scalatest.funsuite.AnyFunSuite
+import spinal.core
 import spinal.core._
 import spinal.core.sim._
 import spinal.lib.sim.StreamReadyRandomizer
@@ -104,6 +105,22 @@ class NeuronCoreTest extends AnyFunSuite {
     dut.clockDomain.forkStimulus(2)
     SimTimeout(100000)
     new NeuronCoreAgent(dut.noc, dut.clockDomain)
+  }
+
+  test("current ram wr test"){
+    complied.doSim { dut =>
+      val agent = initDut(dut)
+      val current = Array.tabulate(4, 128){
+        (_, _) => BigInt(64, Random)
+      }
+      for((c, i) <- current.zipWithIndex){
+        agent.dataWrite(i * 1024, c.toSeq)
+      }
+      for((c, i) <- current.zipWithIndex){
+        val cRead = agent.dataRead(i * 1024, len = 128)
+        assert(cRead sameElements c)
+      }
+    }
   }
 
   test("one current fire test"){
