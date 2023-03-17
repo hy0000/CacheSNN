@@ -36,7 +36,7 @@ class CacheSNN extends Component {
   )
   val mainClockDomain = ClockDomain(clockDomain.clock, mainRst, config = MySpinalConfig.defaultConfigForClockDomains)
 
-  val _ = new ClockingArea(mainClockDomain){
+  val chip = new ClockingArea(mainClockDomain){
     val synapseCores = Seq.fill(4)(new SynapseCore)
     val neuronCore = new NeuronCore
     val manager = new ManagerCore
