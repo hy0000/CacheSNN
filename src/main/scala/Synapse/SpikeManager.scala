@@ -466,12 +466,11 @@ class MissSpikeManager extends Component {
     cacheWrite
       .whenIsActive {
         val address = spikeQueue.io.pop.cacheLineAddr << cacheLineAddrOffset
+        io.bus.cmd.arbitrationFrom(io.aerIn.body)
         io.bus.cmd.len := io.len
         io.bus.cmd.address := address.resized
-        io.bus.cmd.valid := True
         io.bus.cmd.write := True
         io.bus.cmd.data := io.aerIn.body.fragment
-        io.aerIn.body.ready := io.bus.cmd.ready
         when(io.aerIn.body.lastFire) {
           goto(popSpike)
         }

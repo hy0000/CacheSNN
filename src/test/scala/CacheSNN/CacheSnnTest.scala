@@ -10,11 +10,11 @@ import org.scalatest.funsuite.AnyFunSuite
 import spinal.core.sim._
 
 object CacheSnnTest {
-  val simConfig = SpinalSimConfig(_spinalConfig = MySpinalConfig).withWave
+  val simConfig = SpinalSimConfig(_spinalConfig = MySpinalConfig)
 }
 
 class CacheSnnTest extends AnyFunSuite {
-  val complied = simConfig.compile(new CacheSNN)
+  val complied = simConfig.allOptimisation.compile(new CacheSNN)
 
   case class CacheSnnAgent(dut:CacheSNN) extends ManagerCoreCtrl(dut.io.axiLite, dut.clockDomain){
     val mainMem = AxiMemSim(dut.io.axi, dut.clockDomain)
