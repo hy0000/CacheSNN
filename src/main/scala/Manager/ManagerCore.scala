@@ -130,6 +130,18 @@ class ManagerCore extends NocCore {
   axiCross.addSlave(io.axi, SizeMapping(0, BigInt(1)<<32))
   axiCross.addConnection(aerManager.io.axi, Seq(io.axi))
   axiCross.addConnection(bpManager.io.axi, Seq(io.axi))
+  axiCross.addPipelining(io.axi)(
+    (m ,s) => {
+      m.ar >/-> s.ar
+      m.r <-/< s.r
+    }
+  )(
+    (m, s) => {
+      m.aw >/-> s.aw
+      m.w >/-> s.w
+      m.b <-/< s.b
+    }
+  )
   axiCross.build()
 
   interface.localSend << StreamArbiterFactory.fragmentLock.roundRobin.on(
