@@ -221,4 +221,28 @@ class SynapseCoreTest extends AnyFunSuite {
       assert(agent.current sameElements snnModel.current)
     }
   }
+
+  test("hit rate test"){
+    complied.doSim { dut =>
+      val agent = initDut(dut)
+      agent.regWrite(RegAddr.field2, RegConfig.Field2.inferenceOnly)
+
+      val epoch = 20
+      val preSpike = Array.tabulate(epoch, preLen) {
+        (_, _) => if (Random.nextBoolean()) 1 else 0
+      }
+
+      for (t <- 0 until epoch) {
+        agent.sendPreSpike(preSpike(t))
+        agent.waitCurrentReceived()
+      }
+
+      val cnt = agent.regRead(RegAddr.fieldCnt)
+      val hitCnt = cnt & 0xFFFF
+      val missCnt = cnt >> 16
+      println(s"hit rate ${hitCnt.toFloat / (hitCnt + missCnt)}")
+      val cntCleared = agent.regRead(RegAddr.fieldCnt)
+      assert(cntCleared == 0)
+    }
+  }
 }

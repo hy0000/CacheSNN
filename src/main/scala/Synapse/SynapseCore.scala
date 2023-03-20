@@ -70,6 +70,7 @@ object SynapseCore {
     val field1 = 0x8
     val field2 = 0xC
     val field3 = 0x10
+    val fieldCnt = 0x14
   }
 
   object RegConfig {
@@ -189,11 +190,12 @@ class SynapseCore extends NocCore {
   val regArea = new Area {
     val csr = SynapseCsr()
     val busIf = Apb3BusInterface(interface.regBus, SizeMapping(0, 256 Byte), 0, "")
-    val FIELD_R = busIf.newReg("hit count")
+    val FIELD_R = busIf.newReg("field R")
     val FIELD0  = busIf.newReg("field 0")
     val FIELD1  = busIf.newReg("field 1")
     val FIELD2  = busIf.newReg("field 2")
     val FIELD3  = busIf.newReg("field 3")
+    val FIELD_CNT = busIf.newReg("spike cnt")
 
     FIELD_R.reserved(16 bits)
     val free = FIELD_R.field(Bool, RO, "free")
@@ -207,6 +209,8 @@ class SynapseCore extends NocCore {
     val learning   = FIELD2.field(Bool, WO, "learning")
     val refractory = FIELD2.field(UInt(CacheConfig.tagTimestampWidth bits), WO, "refractory")
     val preNidBase = FIELD3.field(UInt(16 bits), WO, "preNidBase")
+    val hit_cnt = FIELD_CNT.field(UInt(16 bits), RC, "hit cnt")
+    val miss_cnt = FIELD_CNT.field(UInt(16 bits), RC, "miss cnt")
 
     csr.postNidBase := postNidBase
     csr.preLen := preLen
@@ -215,7 +219,15 @@ class SynapseCore extends NocCore {
     csr.learning := learning
     csr.refractory := refractory
     csr.preNidBase := preNidBase
-    busIf.accept(HtmlGenerator("regIf", "synapseCore"))
+
+    when(synapseCtrl.spikeManager.spikeCacheManager.io.hitSpike.pull().fire){
+      hit_cnt := hit_cnt + 1
+    }
+    when(synapseCtrl.spikeManager.missManager.io.missSpike.pull().fire){
+      miss_cnt := miss_cnt + 1
+    }
+
+    busIf.accept(HtmlGenerator("synapseCore", "synapseCore"))
   }
 
   Seq(synapseCtrl.io.csr, synapse.io.csr).foreach( _ := regArea.csr)
