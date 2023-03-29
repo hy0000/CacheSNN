@@ -4,6 +4,7 @@ import CacheSnnTest.simConfig
 import sim._
 import Manager.sim.{ManagerCoreCtrl, NidMapSim, PostNidMapSim}
 import Neuron.sim.NeuronCoreConfigSim
+import Synapse.SynapseCore.{AddrMapping, RegAddr}
 import Util.sim.NumberTool._
 import Util.sim.SnnModel
 import org.scalatest.funsuite.AnyFunSuite
@@ -49,6 +50,14 @@ class CacheSnnTest extends AnyFunSuite {
       }
     }
 
+    def readWeight(size:(Int, Int)): Array[Array[Int]] = {
+      (0 until size._1).map { i =>
+        val addr = weightAddrBase + i * 1024
+        val weightRaw = mainMem.read(addr, length = size._2 / 4)
+        rawToV(weightRaw, 16, 4).toArray
+      }.toArray
+    }
+
     def initial(): Unit ={
       import Synapse.SynapseCore._
       dut.clockDomain.waitSampling(100)
@@ -75,6 +84,23 @@ class CacheSnnTest extends AnyFunSuite {
       // wait synapseCore flushed
       for(dest <- synapseCoreDest){
         waitFree(dest)
+      }
+    }
+
+    def learningInit(): Unit ={
+      // clear spike buffer
+      val mappings = Seq(
+        AddrMapping.postSpike,
+        AddrMapping.preSpike
+      )
+      for(m <- mappings){
+        for(dest <- synapseCoreDest) {
+          val bp = BasePacketSim.dataWrite(
+            dest = dest, src = 0, id = 0,
+            addr = m.base.toLong, data = Seq.fill((m.size/8).toInt)(BigInt(0))
+          )
+          sendBp(bp, mAddr = dataBuffAddr)
+        }
       }
     }
 
@@ -276,6 +302,62 @@ class CacheSnnTest extends AnyFunSuite {
         )
         agent.sendBp(bp, mAddr = 0x10000 + addr)
         agent.waitBpDone()
+      }
+    }
+  }
+
+  test("one core learning test"){
+    complied.doSim { dut =>
+      val agent = initDut(dut)
+      val (preLen, postLen) = (1024, 512)
+      val thisAlpha = 0.5f
+      val snn = new SnnModel(preLen, postLen, thisAlpha)
+
+      val q = 13
+      val synapseCoreId = 0
+      val preSpikeNid = 0x0
+      val postSpikeNid = 1024
+      val threshold = 1 << 13
+
+      // init weight
+      val wInit = 0.4f
+      for (i <- 0 until preLen) {
+        for (j <- 0 until postLen) {
+          snn.weight(i)(j) = quantize(wInit, q)
+        }
+      }
+      agent.loadWeight(snn.weight)
+
+      val nidMapSim = Seq(NidMapSim(
+        nidBase = preSpikeNid >> 10,
+        len = 127,
+        addrBase = (agent.weightAddrBase >> 10).toInt,
+        dest = synapseCoreId
+      ))
+      val postNidMapSim = Seq(PostNidMapSim(nidBase = postSpikeNid >> 10, len = 7))
+      val neuronCoreConfig = Seq(NeuronCoreConfigSim(
+        nidBase = postSpikeNid,
+        acc = 0, srcList = Seq(0), threshold = threshold, spikeLen = postLen / 64,
+        alpha = alphaFix
+      ))
+
+      // config synapse core
+      agent.initial()
+      agent.learningInit()
+      agent.setNidMap(nidMapSim)
+      agent.setPostNidMap(postNidMapSim)
+      agent.setNeuronCoreParam(neuronCoreConfig)
+      agent.setSynapseCoreParam(synapseCoreId, preLen, postLen, preSpikeNid, postSpikeNid, refractory = 1, learning = true)
+      agent.waitBpDone()
+      val epoch = 10
+      for (t <- 0 until epoch) {
+        val preSpike = SpikeFun.randomSpike(preLen)
+        agent.sendPreSpike(dest = synapseCoreId, preSpikeNid, preSpike)
+        val postSpike = agent.waitPostSpike(id = 0)
+        snn.spikeForward(preSpike)
+        val postSpikeTruth = snn.spikeFire(threshold)
+        val weight = agent.readWeight((preLen, postLen))
+        println(t)
       }
     }
   }
