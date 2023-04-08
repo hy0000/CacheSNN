@@ -314,7 +314,7 @@ class CacheSnnTest extends AnyFunSuite {
       val snn = new SnnModel(preLen, postLen, thisAlpha)
 
       val q = 13
-      val synapseCoreId = 0
+      val synapseCoreId = 1
       val preSpikeNid = 0x0
       val postSpikeNid = 1024
       val threshold = 1 << 13
@@ -337,7 +337,7 @@ class CacheSnnTest extends AnyFunSuite {
       val postNidMapSim = Seq(PostNidMapSim(nidBase = postSpikeNid >> 10, len = 7))
       val neuronCoreConfig = Seq(NeuronCoreConfigSim(
         nidBase = postSpikeNid,
-        acc = 0, srcList = Seq(0), threshold = threshold, spikeLen = postLen / 64,
+        acc = 0, srcList = Seq(synapseCoreId), threshold = threshold, spikeLen = postLen / 64,
         alpha = alphaFix
       ))
 
