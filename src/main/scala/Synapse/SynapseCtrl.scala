@@ -115,14 +115,18 @@ class SynapseCtrl extends Component {
       }
     }
 
-    bufferSpike.whenIsActive{
-      io.aerIn.body.ready := True
-      spikeDecoder.io.maskSpike.valid := io.aerIn.body.valid
-      spikeDecoder.io.maskSpike.payload := io.aerIn.body.fragment
-      when(io.aerIn.body.lastFire){
-        goto(compute)
+    bufferSpike
+      .whenIsActive {
+        io.aerIn.body.ready := True
+        spikeDecoder.io.maskSpike.valid := io.aerIn.body.valid
+        spikeDecoder.io.maskSpike.payload := io.aerIn.body.fragment
+        when(io.aerIn.body.lastFire) {
+          goto(compute)
+        }
       }
-    }
+      .onExit{
+        timestamp.increment()
+      }
 
     compute.whenIsActive{
       spikeManager.io.spike << spikeDecoder.io.spikeOut
