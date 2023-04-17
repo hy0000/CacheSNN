@@ -314,7 +314,7 @@ object SynapseLearningPlot extends App{
 }
 
 class PreSpikeFetchTest extends AnyFunSuite {
-  val nPreSpike = 2048
+  val nPreSpike = 1024
   val complied = simConfig.compile(new PreSpikeFetch)
 
   case class SpikeEventSim(nid:Int,

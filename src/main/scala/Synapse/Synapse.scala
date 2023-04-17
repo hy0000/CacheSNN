@@ -198,7 +198,7 @@ class PreSpikeFetch extends Component {
     val rspReg = cloneOf(io.preSpike.read.rsp) setAsReg()
     val preSpikes = rspReg.subdivideIn(timeWindowWidth bits)
     val nidLow = io.spikeEvent.nid(1 downto 0).asBits.asUInt
-    val address = io.spikeEvent.nid(9 downto 2)
+    val address = io.spikeEvent.nid(9 downto 2).resize(9)
     val preSpikesUpdated = Vec(preSpikes.zipWithIndex.map { case (s, i) =>
       s(s.high downto 1) ## (s.lsb | i===nidLow)
     })
